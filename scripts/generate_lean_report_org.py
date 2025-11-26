@@ -525,7 +525,7 @@ def clinvar_url_from_row(r):
     #        return f"https://www.ncbi.nlm.nih.gov/clinvar/variation/VCV{int(vcv):09d}/"
 
     # Else try ALLELEID
-    alleleid = first_token(r.get("ALLELEID")
+    alleleid = first_token(r.get("ALLELEID"))
     print(alleleid)
     if alleleid:
         # keep only digits
