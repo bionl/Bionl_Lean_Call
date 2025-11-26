@@ -525,7 +525,7 @@ def clinvar_url_from_row(r):
     #        return f"https://www.ncbi.nlm.nih.gov/clinvar/variation/VCV{int(vcv):09d}/"
 
     # Else try ALLELEID
-    alleleid = first_token(r.get("ClinVar_ALLELEID") or r.get("ALLELEID"))
+    alleleid = first_token(r.get("ClinVar"))
     print(alleleid)
     if alleleid:
         # keep only digits
@@ -567,7 +567,7 @@ def select_csq_entry(var, csq_format, prefer_clinvar=True):
         rows_alt = rows[:]
 
     if prefer_clinvar:
-        rows_cv = [d for d in rows_alt if (d.get("ClinVar_ALLELEID") or d.get("ALLELEID"))]
+        rows_cv = [d for d in rows_alt if (d.get("ClinVar"))]
         if rows_cv:
             return rows_cv[0]
 
@@ -718,7 +718,7 @@ for var in vcf:
         }
         bayesdel_score = ann.get("BayesDel")
         clinvar     = ann.get("ClinVar_CLNSIG") or ann.get("CLIN_SIG")
-        alleleid    = ann.get("ClinVar_ALLELEID") or ann.get("ALLELEID")
+        alleleid    = ann.get("ClinVar") or ann.get("ALLELEID")
         clinvar_review_status = ann.get("ClinVar_CLNREVSTAT") or ann.get("CLNREVSTAT")
         cadd        = ann.get("CADD_PHRED") or ann.get("CADDraw")
     
