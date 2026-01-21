@@ -45,11 +45,92 @@
           "pattern": "^\\S*\\.csv$"
         }
       }
-    }
+    },
+  "fastq_preprocessing": {
+            "title": "FASTQ Preprocessing",
+            "type": "object",
+            "description": "Trim fastq file or handle UMIs",
+            "default": "",
+            "fa_icon": "fas fa-cut",
+            "properties": {
+                "trim_fastq": {
+                    "type": "boolean",
+                    "fa_icon": "fas fa-cut",
+                    "description": "Run FastP for read trimming",
+                    "help_text": "Use this to perform adapter trimming. Adapter are detected automatically by using the FastP flag `--detect_adapter_for_pe`. For more info see [FastP](https://github.com/OpenGene/fastp)."
+                },
+                "clip_r1": {
+                    "type": "integer",
+                    "default": 0,
+                    "fa_icon": "fas fa-cut",
+                    "description": "Remove bp from the 5' end of read 1",
+                    "help_text": "This may be useful if the qualities were very poor, or if there is some sort of unwanted bias at the 5' end. Corresponds to the FastP flag `--trim_front1`."
+                },
+                "clip_r2": {
+                    "type": "integer",
+                    "default": 0,
+                    "description": "Remove bp from the 5' end of read 2",
+                    "help_text": "This may be useful if the qualities were very poor, or if there is some sort of unwanted bias at the 5' end. Corresponds to the FastP flag `--trim_front2`.",
+                    "fa_icon": "fas fa-cut"
+                },
+                "three_prime_clip_r1": {
+                    "type": "integer",
+                    "default": 0,
+                    "fa_icon": "fas fa-cut",
+                    "description": "Remove bp from the 3' end of read 1",
+                    "help_text": "This may remove some unwanted bias from the 3'.  Corresponds to the FastP flag `--trim_tail1`."
+                },
+                "three_prime_clip_r2": {
+                    "type": "integer",
+                    "default": 0,
+                    "fa_icon": "fas fa-cut",
+                    "description": "Remove bp from the 3' end of read 2",
+                    "help_text": "This may remove some unwanted bias from the 3' end. Corresponds to the FastP flag `--trim_tail2`."
+                },
+                "trim_nextseq": {
+                    "type": "integer",
+                    "default": 0,
+                    "fa_icon": "fas fa-cut",
+                    "description": "Removing poly-G tails.",
+                    "help_text": "DetectS polyG in read tails and trim them. Corresponds to the FastP flag `--trim_poly_g`."
+                },
+                "length_required": {
+                    "type": "integer",
+                    "default": 15,
+                    "fa_icon": "fas fa-cut",
+                    "description": "Minimum length of reads to keep",
+                    "help_text": "This is the minimum length of reads to keep after trimming. Corresponds to the FastP flag `--length_required` (default in FastP is 15bp)."
+                },
+                "save_trimmed": {
+                    "type": "boolean",
+                    "fa_icon": "fas fa-save",
+                    "description": "Save trimmed FastQ file intermediates."
+                },
+                "umi_read_structure": {
+                    "type": "string",
+                    "fa_icon": "fas fa-tape",
+                    "description": "Specify UMI read structure",
+                    "help_text": "One structure if UMI is present on one end (i.e. '+T 2M11S+T'), or two structures separated by a blank space if UMIs a present on both ends (i.e. '2M11S+T 2M11S+T'); please note, this does not handle duplex-UMIs.\n\nFor more info on UMI usage in the pipeline, also check docs [here](./docs/usage/#how-to-handle-umis)."
+                },
+                "group_by_umi_strategy": {
+                    "type": "string",
+                    "default": "Adjacency",
+                    "fa_icon": "fas fa-tape",
+                    "description": "Default strategy with UMI",
+                    "help_text": "Available values: Identity, Edit, Adjacency, Paired"
+                },
+                "save_split_fastqs": {
+                    "type": "boolean",
+                    "fa_icon": "fas fa-vial",
+                    "description": "If set, publishes split FASTQ files. Intended for testing purposes."
+                }
+            }
+        }
   },
 
   "allOf": [
     { "$ref": "#/$defs/io_options" },
+    { "$ref": "#/$defs/fastq_preprocessing" },
     {
       "not": {
         "required": ["post_samplesheet", "variant_calling_outdir"],
