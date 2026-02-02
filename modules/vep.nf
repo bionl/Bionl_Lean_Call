@@ -10,9 +10,12 @@ params.template_dir= params.template_dir?: "${workflow.projectDir}/scripts/templ
 params.run_vep     = params.run_vep     ?: true
 params.min_dp   = params.min_dp   ?: 20
 params.min_qual = params.min_qual ?: 30
-// VEP resource params expected from main/config:
-// params.vep_fasta, params.revel_vcf, params.alpha_missense_vcf, params.clinvar_vcf
 
+params.db_outdir      = params.db_outdir      ?: "${params.outdir}/db_ingest"
+params.db_gene_json   = params.db_gene_json   ?: "${workflow.projectDir}/data/genes.json"
+params.db_gtf         = params.db_gtf         ?: "${workflow.projectDir}/data/Homo_sapiens.GRCh38.115.chr.gtf.gz"
+params.db_step        = params.db_step        ?: 200
+params.assay_type     = params.assay_type     ?: "WES"
 
 /********************  PROCESSES (unchanged logic, publish to per-sample dirs)  ********************/
 
@@ -55,7 +58,7 @@ process FilterVCF {
     tuple val(sample), path("${sample}.filtered.vcf.gz")
   script:
   """
-  bcftools view -i 'FORMAT/DP >= ${params.min_dp} && QUAL >= ${params.min_qual}' $vcf -Oz -o ${sample}.filtered.vcf.gz
+  bcftools view -i 'FILTER="PASS" && FORMAT/DP >= ${params.min_dp} && QUAL >= ${params.min_qual}' $vcf -Oz -o ${sample}.filtered.vcf.gz
   tabix -p vcf ${sample}.filtered.vcf.gz
   """
 }
@@ -126,7 +129,7 @@ process R1R2Ratio {
     region="\${chrom}:\${start}-\${end}"
     counts=\$(samtools view -F 0x904 $bam "\$region" | \
       awk '{flag=\$2; if(and(flag,64)) r1++; if(and(flag,128)) r2++} END {if(r1+r2>0) printf("%d\\t%d\\t%.3f\\n", r1, r2, r1/(r1+r2)); else print "0\\t0\\tNA"}')
-    echo -e "\${chrom}\\t\${start}\\t\${end}\\t\${counts}"
+    echo -e "\${chrom}\\t\${start}\\t\${end}\\t\${ref_name}\\t\${counts}"
   done < $bed > ${sample}_r1r2_per_exon.tsv
   """
 }
@@ -145,7 +148,7 @@ process ForwardReverseRatio {
     region="\${chrom}:\${start}-\${end}"
     counts=\$(samtools view -F 0x904 $bam "\$region" | \
       awk '{flag=\$2; if(and(flag,16)) rev++; else fwd++} END {if(fwd+rev>0){frac=rev/(fwd+rev); bal=(fwd/(fwd+rev)<rev/(fwd+rev)?fwd/(fwd+rev):rev/(fwd+rev)); printf("%d\\t%d\\t%.3f\\t%.3f\\n",fwd,rev,frac,bal)} else print "0\\t0\\tNA\\tNA"}')
-    echo -e "\${chrom}\\t\${start}\\t\${end}\\t\${counts}"
+    echo -e "\${chrom}\\t\${start}\\t\${end}\\t\${ref_name}\\t\${counts}"
   done < $bed > ${sample}_frstrand_per_exon.tsv
   """
 }
@@ -342,12 +345,12 @@ process VEP_Annotate {
     path alpha_missense_vcf_tbi
     path clinvar_vcf
     path clinvar_vcf_tbi
-    path spliceai_snv_vcf
-    path spliceai_snv_vcf_tbi
-    path spliceai_indel_vcf
-    path spliceai_indel_vcf_tbi
-    path bayesdel_vcf
-    path bayesdel_vcf_tbi
+    //path spliceai_snv_vcf
+    //path spliceai_snv_vcf_tbi
+    //path spliceai_indel_vcf
+    //path spliceai_indel_vcf_tbi
+    //path bayesdel_vcf
+    //path bayesdel_vcf_tbi
     path vep_plugins
   output:
     tuple val(sample), path("${sample}.vep.vcf")
@@ -358,7 +361,7 @@ process VEP_Annotate {
   vep \
     -i INPUT_FOR_VEP.vcf \
     -o ${sample}.vep.vcf \
-    --offline --cache --dir_cache ${vep_cache} \
+    --offline --cache --dir_cache ${vep_cache} --cache_version 114 \
     --dir_plugins ${vep_plugins} \
     --fasta ${vep_fasta} \
     --assembly GRCh38 --species homo_sapiens \
@@ -418,6 +421,108 @@ process GENERATE_ACMG_REPORT {
   """
 }
 
+process DB_BUILD_REGIONS_BED {
+  input:
+    path db_gene_json
+    path gtf
+  output:
+    path "db_genes_regions.bed"
+  script:
+  """
+  python ${params.scriptdir}/genome_browser_scripts/ensembl_gtf_genes_to_bed.py \
+    --gtf $gtf \
+    --genes_json $db_gene_json \
+    --feature gene \
+    --chr_prefix \
+    --out db_genes_regions.bed
+  """
+}
+
+
+process DB_REGIONS_TO_POSITIONS {
+
+  input:
+    path db_genes_regions_bed
+
+  output:
+    path("db_genes_positions.bed")
+
+  script:
+  """
+  python ${params.scriptdir}/genome_browser_scripts/db_region_to_position.py \
+    --regions_bed $db_genes_regions_bed \
+    --step ${params.db_step} \
+    --out db_genes_positions.bed
+  """
+}
+
+process DB_FILTER_VCF_TO_GENESET {
+  tag "$sample"
+
+  input:
+    tuple val(sample), path(vcf)
+    path db_genes_regions_bed
+
+  output:
+    tuple val(sample), path("${sample}.geneset.vcf.gz")
+
+  script:
+  """
+  set -euo pipefail
+  tabix -p vcf $vcf || bcftools index -t $vcf
+  bcftools view -R $db_genes_regions_bed $vcf -Oz -o ${sample}.geneset.vcf.gz
+  tabix -p vcf ${sample}.geneset.vcf.gz
+  """
+}
+
+
+process DB_COVERAGE_DELTA {
+  tag "$sample"
+  publishDir "${params.db_outdir}/${sample}", mode: 'copy'
+
+  input:
+    tuple val(sample), path(bam), path(bai)
+    path db_genes_positions_bed
+
+  output:
+    tuple val(sample), path("${sample}.db_coverage_delta.tsv")
+
+  script:
+  """
+  set -euo pipefail
+  samtools depth -aa -b $db_genes_positions_bed $bam \
+    | python ${params.scriptdir}/genome_browser_scripts/db_depth_to_coverage.py \
+        --sample $sample \
+        --assay ${params.assay_type} \
+        --positions_bed $db_genes_positions_bed \
+        --out ${sample}.db_coverage_delta.tsv
+  """
+}
+
+
+
+process DB_VARIANTS_DELTA {
+  tag "$sample"
+  publishDir "${params.db_outdir}/${sample}", mode: 'copy'
+
+  input:
+    tuple val(sample), path(vep_vcf)
+    path db_gene_json
+
+  output:
+    tuple val(sample), path("${sample}.db_variants_delta.tsv")
+
+  script:
+  """
+  python ${params.scriptdir}/genome_browser_scripts/db_vep_vcf_to_variants.py \
+    --sample $sample \
+    --assay ${params.assay_type} \
+    --vcf $vep_vcf \
+    --genes_json $db_gene_json \
+    --out ${sample}.db_variants_delta.tsv
+  """
+}
+
 
 /******************  SUBWORKFLOW: consumes Sarek outputs  ********************/
 
@@ -449,12 +554,12 @@ workflow POST_SAREK {
       file(params.alpha_missense_vcf + ".tbi"), 
       file(params.clinvar_vcf), 
       file(params.clinvar_vcf + ".tbi"), 
-      file(params.spliceai_snv_vcf), 
-      file(params.spliceai_snv_vcf + ".tbi"),
-      file(params.spliceai_indel_vcf), 
-      file(params.spliceai_indel_vcf + ".tbi"),
-      file(params.bayesdel_vcf), 
-      file(params.bayesdel_vcf + ".tbi"),
+      //file(params.spliceai_snv_vcf), 
+      //file(params.spliceai_snv_vcf + ".tbi"),
+      //file(params.spliceai_indel_vcf), 
+      //file(params.spliceai_indel_vcf + ".tbi"),
+      //file(params.bayesdel_vcf), 
+      //file(params.bayesdel_vcf + ".tbi"),
       file(params.vep_plugins)
       ) : AddVAF.out  // (sample, vcf)
 
@@ -494,3 +599,46 @@ workflow POST_SAREK {
     LeanReport(lean_input_ch, script_ch)
     GENERATE_ACMG_REPORT(LeanReport.out, report_script_ch, template_dir_ch)
 }
+
+workflow GENOME_BROWSER {
+  take:
+    vcf_ch
+    bam_ch
+
+  main:
+    db_gene_json_file = file(params.db_gene_json)
+    gtf_file          = file(params.db_gtf)
+
+    DB_BUILD_REGIONS_BED(db_gene_json_file, gtf_file)
+    DB_REGIONS_TO_POSITIONS(DB_BUILD_REGIONS_BED.out)
+
+    // VCF branch
+    DB_FILTER_VCF_TO_GENESET(vcf_ch, DB_BUILD_REGIONS_BED.out)
+    NormalizeVCF(DB_FILTER_VCF_TO_GENESET.out)
+    AddVAF(NormalizeVCF.out)
+
+    vep_ch = params.run_vep ? VEP_Annotate(
+      AddVAF.out,
+      file(params.vep_cache),
+      file(params.vep_fasta),
+      file(params.vep_fasta + ".fai"),
+      file(params.revel_vcf),
+      file(params.revel_vcf + ".tbi"),
+      file(params.alpha_missense_vcf),
+      file(params.alpha_missense_vcf + ".tbi"),
+      file(params.clinvar_vcf),
+      file(params.clinvar_vcf + ".tbi"),
+      file(params.vep_plugins)
+    ) : AddVAF.out
+
+    DB_VARIANTS_DELTA(vep_ch, db_gene_json_file)
+
+    // BAM branch
+    DB_COVERAGE_DELTA(bam_ch, DB_REGIONS_TO_POSITIONS.out)
+
+  emit:
+    variants_delta = DB_VARIANTS_DELTA.out
+    coverage_delta = DB_COVERAGE_DELTA.out
+}
+
+

@@ -10,7 +10,8 @@ include { PIPELINE_INITIALISATION; PIPELINE_COMPLETION } \
 include { NFCORE_SAREK } \
   from './external/sarek/main.nf'
 
-include { POST_SAREK } from './modules/vep.nf'
+include { POST_SAREK; GENOME_BROWSER } \
+  from './modules/vep.nf'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PARAMETERS & VALIDATION
@@ -182,6 +183,7 @@ workflow RUN_FROM_VARIANT_CALLING_OUTDIR {
 
         // Run post-processing
         POST_SAREK(vcf_ch, bam_ch, bed_ch)
+        GENOME_BROWSER(vcf_ch, bam_ch)
 }
 
 workflow RUN_FROM_POST_SAMPLESHEET {
@@ -234,6 +236,7 @@ workflow RUN_FROM_POST_SAMPLESHEET {
 
         // Run post-processing
         POST_SAREK(vcf_ch, bam_ch, bed_ch)
+        GENOME_BROWSER(vcf_ch, bam_ch)
 }
 
 workflow RUN_FULL_VARIANT_CALLING {
@@ -280,6 +283,8 @@ workflow RUN_FULL_VARIANT_CALLING {
             COLLECT_VARIANT_CALLING_OUTPUTS.out.bam, 
             bed_ch
         )
+
+        GENOME_BROWSER(COLLECT_VARIANT_CALLING_OUTPUTS.out.vcf, COLLECT_VARIANT_CALLING_OUTPUTS.out.bam)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
