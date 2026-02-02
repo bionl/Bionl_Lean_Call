@@ -632,7 +632,7 @@ def get_exon_cov(chrom, pos):
 r1r2_data = {}
 with open(args.r1r2_summary) as f:
     for line in f:
-        chrom, start, end, gene, r1, r2, ratio = line.strip().split("\t")
+        chrom, start, end, r1, r2, gene, ratio = line.strip().split("\t")
         r1r2_data[(chrom, int(start), int(end))] = (r1, r2, gene, ratio)
 
 def get_r1r2(chrom, pos):
