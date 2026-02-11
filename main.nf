@@ -10,7 +10,8 @@ include { PIPELINE_INITIALISATION; PIPELINE_COMPLETION } \
 include { NFCORE_SAREK } \
   from './external/sarek/main.nf'
 
-include { POST_SAREK } from './modules/vep.nf'
+include { POST_SAREK; GENOME_BROWSER } \
+  from './modules/vep.nf'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PARAMETERS & VALIDATION
@@ -280,6 +281,7 @@ workflow RUN_FULL_VARIANT_CALLING {
             COLLECT_VARIANT_CALLING_OUTPUTS.out.bam, 
             bed_ch
         )
+
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

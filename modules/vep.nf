@@ -126,7 +126,7 @@ process R1R2Ratio {
     region="\${chrom}:\${start}-\${end}"
     counts=\$(samtools view -F 0x904 $bam "\$region" | \
       awk '{flag=\$2; if(and(flag,64)) r1++; if(and(flag,128)) r2++} END {if(r1+r2>0) printf("%d\\t%d\\t%.3f\\n", r1, r2, r1/(r1+r2)); else print "0\\t0\\tNA"}')
-    echo -e "\${chrom}\\t\${start}\\t\${end}\\t\${counts}"
+    echo -e "\${chrom}\\t\${start}\\t\${end}\\t\${ref_name}\\t\${counts}"
   done < $bed > ${sample}_r1r2_per_exon.tsv
   """
 }
@@ -145,7 +145,7 @@ process ForwardReverseRatio {
     region="\${chrom}:\${start}-\${end}"
     counts=\$(samtools view -F 0x904 $bam "\$region" | \
       awk '{flag=\$2; if(and(flag,16)) rev++; else fwd++} END {if(fwd+rev>0){frac=rev/(fwd+rev); bal=(fwd/(fwd+rev)<rev/(fwd+rev)?fwd/(fwd+rev):rev/(fwd+rev)); printf("%d\\t%d\\t%.3f\\t%.3f\\n",fwd,rev,frac,bal)} else print "0\\t0\\tNA\\tNA"}')
-    echo -e "\${chrom}\\t\${start}\\t\${end}\\t\${counts}"
+    echo -e "\${chrom}\\t\${start}\\t\${end}\\t\${ref_name}\\t\${counts}"
   done < $bed > ${sample}_frstrand_per_exon.tsv
   """
 }
