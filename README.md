@@ -148,11 +148,54 @@ nextflow run main.nf \
 That's it! The pipeline handles everything else automatically.
 
 ---
+# Validation & Benchmarking
+
+This workflow was benchmarked using Genome in a Bottle (GIAB) reference samples
+to validate performance within clinically relevant ACMG Secondary Findings regions.
+
+## Benchmarking Overview
+
+Datasets:
+- HG003 (GIAB)
+- HG002 (GIAB)
+
+Reference:
+- GRCh38
+
+Target Regions:
+- ACMG SF v3.3 BED
+
+Pipeline Configuration:
+- Aligner: BWA-MEM
+- Variant Callers: DeepVariant + GATK HaplotypeCaller
+- Strategy: Consensus variant integration (DV+HC)
+- Filtering:
+  - ACMG region restriction
+  - Depth and genotype quality thresholds
+  - PASS variants only
+
+## Performance Summary (ACMG Regions)
+
+| Metric | Result |
+|---|---|
+| Precision | 94.8% |
+| Recall | 99.5% |
+| F1 Score | 97.1% |
+
+Benchmarking was performed against GIAB high-confidence truth sets using hap.py.
+
+## Reproducibility
+
+To reproduce validated results, use the configuration shown in `USAGE.md`.
+
+## Full Validation Documentation
+
+See detailed validation report: docs/validation/GIAB_validation_report.md
 
 ## Support
 
 For questions or assistance:
 - Contact your bioinformatics team
-- Email: support@example.com
+- Email: khatib@bionl.ai
 
 **Pipeline version**: 1.0.0

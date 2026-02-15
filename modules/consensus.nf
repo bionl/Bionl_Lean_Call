@@ -2,7 +2,7 @@
 nextflow.enable.dsl=2
 
 params.outdir = params.outdir ?: "results"
-params.ref_fasta = params.ref_fasta ?: null
+params.ref_fasta = params.ref_fasta ?: params.vep_fasta
 
 /********************  CONSENSUS CALLING PROCESSES  ********************/
 
@@ -21,6 +21,7 @@ process NormalizeDV {
   script:
   """
   bcftools norm -f ${ref_fasta} ${vcf} -Oz -o ${sample}.dv.norm.vcf.gz
+  #bcftools norm -m -any ${vcf} -Oz -o ${sample}.dv.norm.vcf.gz
   bcftools index -t ${sample}.dv.norm.vcf.gz
   bcftools view -f PASS,. ${sample}.dv.norm.vcf.gz -Oz -o ${sample}.dv.norm.pass.vcf.gz
   bcftools index -t ${sample}.dv.norm.pass.vcf.gz

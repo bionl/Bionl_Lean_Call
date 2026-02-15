@@ -6,9 +6,8 @@ output/
 *.log*
 
 # Data files (uncomment if you don't want to track data)
-# data/*.vcf.gz
-# data/*.bam
-# data/*.bai
+data/*
+
 
 # Temporary files
 *.tmp

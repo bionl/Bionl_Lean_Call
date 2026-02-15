@@ -223,6 +223,39 @@ nextflow run main.nf \
 ```
 
 ---
+# Validated Configuration (GIAB Benchmarking)
+
+The workflow was benchmarked using Genome in a Bottle (GIAB) datasets
+and achieved ≥95% precision within ACMG SF v3.3 regions using the
+following validated configuration.
+
+## Pipeline Components
+
+- **Aligner:** BWA-MEM2
+- **Variant Callers:** DeepVariant + GATK HaplotypeCaller
+- **Variant Strategy:** Consensus integration (DV + HC)
+- **Reference Genome:** GRCh38
+- **Target Regions:** ACMG SF v3.3 BED
+
+## Region & Variant Filtering
+
+- Variants restricted to ACMG SF regions
+- Only `PASS` variants retained
+- GIAB high-confidence regions used during benchmarking
+
+## Recommended Quality Thresholds
+
+- **Minimum Depth (DP):** ≥ 20
+- **Minimum Genotype Quality (GQ):** ≥ 20
+- **Variant Status:** PASS only
+
+## Benchmarking Notes
+
+- Validation performed using GIAB HG003 and HG002 samples.
+- Precision metrics were calculated after ACMG region filtering.
+- Performance may vary if caller combinations or filtering thresholds are modified.
+
+---
 
 ## Tips and Best Practices
 

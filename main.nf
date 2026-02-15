@@ -26,14 +26,15 @@ params.outdir                 = params.outdir ?: params.output
 params.bed                    = params.bed ?: "${workflow.projectDir}/data/annotated_merged_MANE_deduped.bed"
 params.run_variant_calling    = params.run_variant_calling instanceof Boolean ? params.run_variant_calling : true
 params.create_consensus       = params.create_consensus instanceof Boolean ? params.create_consensus : true
-params.ref_fasta              = params.ref_fasta ?: null
+params.ref_fasta              = params.ref_fasta ?: params.vep_fasta
+//params.vep_fasta              = params.vep_fasta ?: params.vep_fasta
 
 // Validate required parameters
 if (params.run_variant_calling) {
     if (!params.input)  error "❌ Missing --input (samplesheet CSV) when run_variant_calling=true"
     if (!params.outdir) error "❌ Missing --outdir when run_variant_calling=true"
     if (params.create_consensus && !params.ref_fasta) {
-        error "❌ Missing --ref_fasta when create_consensus=true"
+        error "❌ Missing --vep_fasta when create_consensus=true"
     }
 } else {
     if (!params.post_samplesheet && !params.variant_calling_outdir)
@@ -313,12 +314,14 @@ workflow RUN_FULL_VARIANT_CALLING {
         PIPELINE_INITIALISATION(
             params.version,
             params.validate_params,
-            params.monochrome_logs,
             args,
             params.outdir,
-            params.input
+            params.input,
+            params.help,
+            params.help_full,
+            params.show_hidden,
         )
-
+        
         NFCORE_SAREK(PIPELINE_INITIALISATION.out.samplesheet)
 
         PIPELINE_COMPLETION(
