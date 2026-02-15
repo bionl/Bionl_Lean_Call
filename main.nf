@@ -13,6 +13,9 @@ include { NFCORE_SAREK } \
 include { POST_SAREK } \
   from './modules/vep.nf'
 
+include { CONSENSUS_CALLING } \
+  from './modules/consensus.nf'
+
 // ═══════════════════════════════════════════════════════════════════════════
 // PARAMETERS & VALIDATION
 // ═══════════════════════════════════════════════════════════════════════════
@@ -22,11 +25,16 @@ params.input                  = params.input ?: params.samplesheet
 params.outdir                 = params.outdir ?: params.output
 params.bed                    = params.bed ?: "${workflow.projectDir}/data/annotated_merged_MANE_deduped.bed"
 params.run_variant_calling    = params.run_variant_calling instanceof Boolean ? params.run_variant_calling : true
+params.create_consensus       = params.create_consensus instanceof Boolean ? params.create_consensus : true
+params.ref_fasta              = params.ref_fasta ?: null
 
 // Validate required parameters
 if (params.run_variant_calling) {
     if (!params.input)  error "❌ Missing --input (samplesheet CSV) when run_variant_calling=true"
     if (!params.outdir) error "❌ Missing --outdir when run_variant_calling=true"
+    if (params.create_consensus && !params.ref_fasta) {
+        error "❌ Missing --ref_fasta when create_consensus=true"
+    }
 } else {
     if (!params.post_samplesheet && !params.variant_calling_outdir)
         error "❌ When run_variant_calling=false provide either --post_samplesheet or --variant_calling_outdir"
@@ -63,10 +71,22 @@ workflow COLLECT_VARIANT_CALLING_OUTPUTS {
     main:
         def isGCS = isGcsPath(outdir)
         
-        // Collect VCFs
-        vcf_ch = trigger
+        // Collect DeepVariant VCFs
+        dv_vcf_ch = trigger
             .flatMap { 
-                file("${outdir}/variant_calling/*/*/*.vcf.gz", checkIfExists: !isGCS)
+                file("${outdir}/variant_calling/deepvariant/*/*.vcf.gz", checkIfExists: !isGCS)
+            }
+            .filter { vcf -> 
+                vcf.name.endsWith('.vcf.gz') && 
+                !vcf.name.contains('.g.vcf.gz') && 
+                !vcf.name.endsWith('.tbi') 
+            }
+            .map { vcf -> tuple(vcf.parent.name, vcf) }
+        
+        // Collect HaplotypeCaller VCFs
+        hc_vcf_ch = trigger
+            .flatMap { 
+                file("${outdir}/variant_calling/haplotypecaller/*/*.vcf.gz", checkIfExists: !isGCS)
             }
             .filter { vcf -> 
                 vcf.name.endsWith('.vcf.gz') && 
@@ -102,7 +122,8 @@ workflow COLLECT_VARIANT_CALLING_OUTPUTS {
             }
 
     emit:
-        vcf = vcf_ch
+        dv_vcf = dv_vcf_ch
+        hc_vcf = hc_vcf_ch
         bam = bam_ch
 }
 
@@ -121,18 +142,56 @@ workflow RUN_FROM_VARIANT_CALLING_OUTDIR {
         ╚════════════════════════════════════════════════════════════╝
         """.stripIndent()
 
-        // Collect VCFs
-        vcf_ch = Channel
-            .fromPath("${variant_calling_outdir}/variant_calling/*/*/*.vcf.gz", checkIfExists: !isGCS)
-            .filter { vcf -> 
-                vcf.name.endsWith('.vcf.gz') && 
-                !vcf.name.contains('.g.vcf.gz') && 
-                !vcf.name.endsWith('.tbi') 
-            }
-            .map { vcf -> 
-                def sample = vcf.parent.name
-                tuple(sample, vcf) 
-            }
+        // Collect VCFs (use consensus or single caller depending on params)
+        if (params.create_consensus) {
+            // Collect DeepVariant VCFs
+            dv_vcf_ch = Channel
+                .fromPath("${variant_calling_outdir}/variant_calling/deepvariant/*/*.vcf.gz", checkIfExists: !isGCS)
+                .filter { vcf -> 
+                    vcf.name.endsWith('.vcf.gz') && 
+                    !vcf.name.contains('.g.vcf.gz') && 
+                    !vcf.name.endsWith('.tbi') 
+                }
+                .map { vcf -> 
+                    def sample = vcf.parent.name
+                    tuple(sample, vcf) 
+                }
+            
+            // Collect HaplotypeCaller VCFs
+            hc_vcf_ch = Channel
+                .fromPath("${variant_calling_outdir}/variant_calling/haplotypecaller/*/*.vcf.gz", checkIfExists: !isGCS)
+                .filter { vcf -> 
+                    vcf.name.endsWith('.vcf.gz') && 
+                    !vcf.name.contains('.g.vcf.gz') && 
+                    !vcf.name.endsWith('.tbi') 
+                }
+                .map { vcf -> 
+                    def sample = vcf.parent.name
+                    tuple(sample, vcf) 
+                }
+            
+            // Create reference channels
+            ref_fasta_ch = Channel.value(file(params.ref_fasta))
+            ref_fai_ch = Channel.value(file(params.ref_fasta + ".fai"))
+            
+            // Run consensus calling
+            CONSENSUS_CALLING(dv_vcf_ch, hc_vcf_ch, ref_fasta_ch, ref_fai_ch)
+            vcf_ch = CONSENSUS_CALLING.out.consensus_vcf
+            
+        } else {
+            // Use single caller VCF (default to DeepVariant or configurable)
+            vcf_ch = Channel
+                .fromPath("${variant_calling_outdir}/variant_calling/*/*/*.vcf.gz", checkIfExists: !isGCS)
+                .filter { vcf -> 
+                    vcf.name.endsWith('.vcf.gz') && 
+                    !vcf.name.contains('.g.vcf.gz') && 
+                    !vcf.name.endsWith('.tbi') 
+                }
+                .map { vcf -> 
+                    def sample = vcf.parent.name
+                    tuple(sample, vcf) 
+                }
+        }
 
         // Collect BAMs with BAI
         bam_ch = Channel
@@ -167,7 +226,7 @@ workflow RUN_FROM_VARIANT_CALLING_OUTDIR {
             .count()
             .subscribe { count ->
                 if (count == 0) {
-                    error "❌ No VCFs found in ${variant_calling_outdir}/variant_calling/*/*/*.vcf.gz"
+                    error "❌ No VCFs found"
                 }
                 log.info "✓ Found ${count} VCF file(s)"
             }
@@ -195,6 +254,8 @@ workflow RUN_FROM_POST_SAMPLESHEET {
         ╔════════════════════════════════════════════════════════════╗
         ║  Using custom post-samplesheet                             ║
         ║  File: ${post_samplesheet}
+        ║  Note: Consensus calling is skipped when using             ║
+        ║        post-samplesheet (single VCF per sample expected)   ║
         ╚════════════════════════════════════════════════════════════╝
         """.stripIndent()
 
@@ -233,7 +294,7 @@ workflow RUN_FROM_POST_SAMPLESHEET {
         vcf_ch.view { s, v -> "📄 VCF -> ${s} :: ${v.name}" }
         bam_ch.view { s, a, i -> "🧬 BAM -> ${s} :: ${a.name}" }
 
-        // Run post-processing
+        // Run post-processing (no consensus for post-samplesheet)
         POST_SAREK(vcf_ch, bam_ch, bed_ch)
 }
 
@@ -245,19 +306,17 @@ workflow RUN_FULL_VARIANT_CALLING {
         log.info """
         ╔════════════════════════════════════════════════════════════╗
         ║  Running full variant calling pipeline (Sarek)             ║
+        ║  Consensus calling: ${params.create_consensus ? 'ENABLED' : 'DISABLED'}
         ╚════════════════════════════════════════════════════════════╝
         """.stripIndent()
 
         PIPELINE_INITIALISATION(
             params.version,
             params.validate_params,
-            //params.monochrome_logs,
+            params.monochrome_logs,
             args,
             params.outdir,
-            params.input,
-            params.help,
-            params.help_full,
-            params.show_hidden,
+            params.input
         )
 
         NFCORE_SAREK(PIPELINE_INITIALISATION.out.samplesheet)
@@ -278,13 +337,30 @@ workflow RUN_FULL_VARIANT_CALLING {
             params.outdir
         )
 
+        // Create consensus VCF if enabled
+        if (params.create_consensus) {
+            ref_fasta_ch = Channel.value(file(params.ref_fasta))
+            ref_fai_ch = Channel.value(file(params.ref_fasta + ".fai"))
+            
+            CONSENSUS_CALLING(
+                COLLECT_VARIANT_CALLING_OUTPUTS.out.dv_vcf,
+                COLLECT_VARIANT_CALLING_OUTPUTS.out.hc_vcf,
+                ref_fasta_ch,
+                ref_fai_ch
+            )
+            
+            final_vcf_ch = CONSENSUS_CALLING.out.consensus_vcf
+        } else {
+            // Use DeepVariant VCFs by default (or could use HC, make configurable)
+            final_vcf_ch = COLLECT_VARIANT_CALLING_OUTPUTS.out.dv_vcf
+        }
+
         // Run post-processing
         POST_SAREK(
-            COLLECT_VARIANT_CALLING_OUTPUTS.out.vcf, 
+            final_vcf_ch, 
             COLLECT_VARIANT_CALLING_OUTPUTS.out.bam, 
             bed_ch
         )
-
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
