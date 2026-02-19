@@ -39,7 +39,7 @@ process CONS_REHEADER_VCF {
 
 process NormalizeDV {
   tag "$sample"
-  publishDir "${params.outdir}/${sample}/consensus", mode: 'copy'
+  //publishDir "${params.outdir}/${sample}/consensus", mode: 'copy'
   
   input:
     tuple val(sample), path(vcf)
@@ -61,7 +61,7 @@ process NormalizeDV {
 
 process NormalizeHC {
   tag "$sample"
-  publishDir "${params.outdir}/${sample}/consensus", mode: 'copy'
+  //publishDir "${params.outdir}/${sample}/consensus", mode: 'copy'
   
   input:
     tuple val(sample), path(vcf)
@@ -83,7 +83,7 @@ process NormalizeHC {
 
 process SplitByCallerOverlap {
   tag "$sample"
-  publishDir "${params.outdir}/${sample}/consensus", mode: 'copy'
+  //publishDir "${params.outdir}/${sample}/consensus", mode: 'copy'
   
   input:
     tuple val(sample), path(dv_vcf), path(dv_tbi), path(hc_vcf), path(hc_tbi)
@@ -103,7 +103,7 @@ process SplitByCallerOverlap {
 
 process AnnotateDVOnly {
   tag "$sample"
-  publishDir "${params.outdir}/${sample}/consensus", mode: 'copy'
+  //publishDir "${params.outdir}/${sample}/consensus", mode: 'copy'
   
   input:
     tuple val(sample), path(dv_only_vcf)
@@ -132,7 +132,7 @@ process AnnotateDVOnly {
 
 process AnnotateHCOnly {
   tag "$sample"
-  publishDir "${params.outdir}/${sample}/consensus", mode: 'copy'
+  //publishDir "${params.outdir}/${sample}/consensus", mode: 'copy'
   
   input:
     tuple val(sample), path(hc_only_vcf)
@@ -161,7 +161,7 @@ process AnnotateHCOnly {
 
 process AnnotateShared {
   tag "$sample"
-  publishDir "${params.outdir}/${sample}/consensus", mode: 'copy'
+  //publishDir "${params.outdir}/${sample}/consensus", mode: 'copy'
   
   input:
     tuple val(sample), path(shared_vcf)
