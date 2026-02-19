@@ -5,6 +5,37 @@ params.outdir = params.outdir ?: "results"
 params.ref_fasta = params.ref_fasta ?: params.vep_fasta
 
 /********************  CONSENSUS CALLING PROCESSES  ********************/
+process CONS_REHEADER_VCF {
+  tag "${sample}:${caller}"
+
+  input:
+    tuple val(sample), val(caller), path(vcf)
+
+  output:
+    tuple val(sample), val(caller), path("${sample}.${caller}.rehead.vcf.gz"), path("${sample}.${caller}.rehead.vcf.gz.tbi")
+
+  script:
+  """
+  set -euo pipefail
+  
+  n=\$(bcftools query -l $vcf | wc -l)
+  if [ "\$n" -ne 1 ]; then
+    echo "ERROR: expected single-sample VCF, found \$n samples in $vcf" >&2
+    exit 2
+  fi
+
+  old=\$(bcftools query -l $vcf | head -n 1)
+
+  if [ "\$old" = "${sample}" ]; then
+    cp $vcf ${sample}.${caller}.rehead.vcf.gz
+  else
+    echo -e "\${old}\\t${sample}" > rename.txt
+    bcftools reheader -s rename.txt -o ${sample}.${caller}.rehead.vcf.gz $vcf
+  fi
+
+  bcftools index -t ${sample}.${caller}.rehead.vcf.gz
+  """
+}
 
 process NormalizeDV {
   tag "$sample"
@@ -215,9 +246,25 @@ workflow CONSENSUS_CALLING {
     ref_fai_ch   // reference fasta index
   
   main:
+    dv_labeled = dv_vcf_ch.map { s, v -> tuple(s, 'DV', v) }
+    hc_labeled = hc_vcf_ch.map { s, v -> tuple(s, 'HC', v) }
+    both_callers_ch = dv_labeled.mix(hc_labeled)
+
+    // Reheader ONCE for both callers
+    CONS_REHEADER_VCF(both_callers_ch)
+
+    // Split back to DV and HC channels (drop caller and tbi for NormalizeDV/HC inputs)
+    dv_fix_ch = CONS_REHEADER_VCF.out
+      .filter { s, caller, vcf, tbi -> caller == 'DV' }
+      .map    { s, caller, vcf, tbi -> tuple(s, vcf) }
+
+    hc_fix_ch = CONS_REHEADER_VCF.out
+      .filter { s, caller, vcf, tbi -> caller == 'HC' }
+      .map    { s, caller, vcf, tbi -> tuple(s, vcf) }
+
     // Normalize both VCFs
-    NormalizeDV(dv_vcf_ch, ref_fasta_ch, ref_fai_ch)
-    NormalizeHC(hc_vcf_ch, ref_fasta_ch, ref_fai_ch)
+    NormalizeDV(dv_fix_ch, ref_fasta_ch, ref_fai_ch)
+    NormalizeHC(hc_fix_ch, ref_fasta_ch, ref_fai_ch)
     
     // Join DV and HC normalized VCFs by sample
     combined_ch = NormalizeDV.out
