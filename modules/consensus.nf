@@ -51,8 +51,8 @@ process NormalizeDV {
   
   script:
   """
-  bcftools norm -f ${ref_fasta} ${vcf} -Oz -o ${sample}.dv.norm.vcf.gz
-  #bcftools norm -m -any ${vcf} -Oz -o ${sample}.dv.norm.vcf.gz
+  #bcftools norm -f ${ref_fasta} ${vcf} -Oz -o ${sample}.dv.norm.vcf.gz
+  bcftools norm -m -any ${vcf} -Oz -o ${sample}.dv.norm.vcf.gz
   bcftools index -t ${sample}.dv.norm.vcf.gz
   bcftools view -f PASS,. ${sample}.dv.norm.vcf.gz -Oz -o ${sample}.dv.norm.pass.vcf.gz
   bcftools index -t ${sample}.dv.norm.pass.vcf.gz
@@ -73,8 +73,8 @@ process NormalizeHC {
   
   script:
   """
-  bcftools norm -f ${ref_fasta} ${vcf} -Oz -o ${sample}.hc.norm.vcf.gz
-  #bcftools norm -m -any ${vcf} -Oz -o ${sample}.hc.norm.vcf.gz
+  #bcftools norm -f ${ref_fasta} ${vcf} -Oz -o ${sample}.hc.norm.vcf.gz
+  bcftools norm -m -any ${vcf} -Oz -o ${sample}.hc.norm.vcf.gz
   bcftools index -t ${sample}.hc.norm.vcf.gz
   bcftools view -f PASS,. ${sample}.hc.norm.vcf.gz -Oz -o ${sample}.hc.norm.pass.vcf.gz
   bcftools index -t ${sample}.hc.norm.pass.vcf.gz
