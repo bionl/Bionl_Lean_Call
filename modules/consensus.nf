@@ -2,7 +2,7 @@
 nextflow.enable.dsl=2
 
 params.outdir = params.outdir ?: "results"
-params.ref_fasta = params.ref_fasta ?: params.fasta
+params.ref_fasta = params.ref_fasta ?: params.vep_fasta
 
 /********************  CONSENSUS CALLING PROCESSES  ********************/
 process CONS_REHEADER_VCF {
