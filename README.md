@@ -124,7 +124,6 @@ Pipeline Configuration:
   - PASS variants only
 
 ## Performance Summary (ACMG Regions)
-### SNPS
 
 | Metric | Result |
 |---|---|
