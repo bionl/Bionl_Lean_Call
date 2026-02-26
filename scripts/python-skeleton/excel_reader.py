@@ -119,7 +119,7 @@ class ExcelDataReader:
                 if missing_columns:
                     raise ValueError(f"Missing required columns in '{tab_name}': {missing_columns}")
 
-    def process_for_template(self, data: Dict[str, pd.DataFrame], sample_id: str) -> Dict[str, Any]:
+    def process_for_template(self, data: Dict[str, pd.DataFrame], sample_id: str, assay: Optional[str] = None) -> Dict[str, Any]:
         """Process Excel data into format needed for HTML template"""
 
         template_data = {
@@ -127,8 +127,16 @@ class ExcelDataReader:
             'report_generated': datetime.now().strftime('%Y-%m-%d %H:%M'),
         }
 
+        # Add assay if provided (overrides Excel data)
+        if assay:
+            template_data['assay'] = assay
+
         # Process Page 1 header data
         template_data.update(self._process_header_data(data))
+
+        # Override assay from command line if provided
+        if assay:
+            template_data['assay'] = assay
 
         # Process variant data for Page 1 & 2
         template_data.update(self._process_variant_data(data))

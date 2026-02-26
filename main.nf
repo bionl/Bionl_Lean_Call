@@ -321,7 +321,23 @@ workflow RUN_FULL_VARIANT_CALLING {
             params.help_full,
             params.show_hidden,
         )
-        
+        // Build sample -> assay map from the validated sarek samplesheet channel
+
+        // PIPELINE_INITIALISATION.out.samplesheet is a channel emitting rows (maps/objects)
+        // Build sample -> assay map from PIPELINE_INITIALISATION.out.samplesheet
+        def assayMap = [:]
+
+        PIPELINE_INITIALISATION.out.samplesheet
+            .map { row ->
+                def meta = row[0]
+                tuple(meta.sample.toString(), (meta.assay ?: 'NA').toString())
+            }
+            .toList()
+            .subscribe { pairs ->
+                assayMap = pairs.collectEntries { s, a -> [(s): a] }
+                log.info "✓ Loaded assay metadata for ${assayMap.size()} sample(s)"
+                assayMap.each { k, v -> log.info "  ${k} -> ${v}" }
+            }
         NFCORE_SAREK(PIPELINE_INITIALISATION.out.samplesheet)
 
         PIPELINE_COMPLETION(
@@ -359,11 +375,25 @@ workflow RUN_FULL_VARIANT_CALLING {
         }
 
         // Run post-processing
-        POST_SAREK(
-            final_vcf_ch, 
-            COLLECT_VARIANT_CALLING_OUTPUTS.out.bam, 
-            bed_ch
-        )
+        //POST_SAREK(
+        //    final_vcf_ch, 
+        //    COLLECT_VARIANT_CALLING_OUTPUTS.out.bam, 
+        //    bed_ch
+        //)
+        // Attach meta (sample + assay) to channels for downstream reporting
+        def vcf_with_meta_ch = final_vcf_ch.map { sample, vcf ->
+            def meta = [ sample: sample, assay: assayMap.get(sample, 'NA') ]
+            tuple(meta, vcf)
+        }
+
+        def bam_with_meta_ch = COLLECT_VARIANT_CALLING_OUTPUTS.out.bam.map { sample, bam, bai ->
+            def meta = [ sample: sample, assay: assayMap.get(sample, 'NA') ]
+            tuple(meta, bam, bai)
+        }
+
+
+        // Run post-processing (meta-aware)
+        POST_SAREK(vcf_with_meta_ch, bam_with_meta_ch, bed_ch)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

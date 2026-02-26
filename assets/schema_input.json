@@ -19,6 +19,14 @@
                 "errorMessage": "Sample ID must be provided, cannot contain spaces and must be a string value",
                 "meta": ["sample"]
             },
+            "assay": {
+                "type": "string",
+                "enum": ["WES", "WGS", "NA"],
+                "default": "WGS",
+                "description": "Sequencing assay type (WES or WGS). Used for downstream reporting only.",
+                "errorMessage": "assay must be one of: WES, WGS, NA",
+                "meta": ["assay"]
+            },
             "sex": {
                 "errorMessage": "Sex must be one of 'XX', 'XY', or 'NA'",
                 "meta": ["sex"],
@@ -134,7 +142,7 @@
             "fastq_2": ["fastq_1"],
             "spring_2": ["spring_1"]
         },
-        "required": ["patient", "sample"],
+        "required": ["patient", "sample", "assay"],
         "uniqueEntries": ["lane", "patient", "sample"]
     }
 }
