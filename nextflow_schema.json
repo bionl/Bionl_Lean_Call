@@ -26,96 +26,11 @@
           "format": "directory-path"
         }
       }
-    },
-
-    "fastq_preprocessing": {
-      "title": "FASTQ Preprocessing",
-      "type": "object",
-      "description": "Options for trimming FASTQ files and handling UMIs.",
-      "fa_icon": "fas fa-cut",
-      "properties": {
-        "trim_fastq": {
-          "type": "boolean",
-          "default": false,
-          "fa_icon": "fas fa-cut",
-          "description": "Run fastp for read trimming.",
-          "help_text": "Use this to perform adapter trimming. Adapters are detected automatically with fastp `--detect_adapter_for_pe`."
-        },
-        "clip_r1": {
-          "type": "integer",
-          "default": 0,
-          "fa_icon": "fas fa-cut",
-          "description": "Remove bp from the 5' end of read 1.",
-          "help_text": "Corresponds to fastp `--trim_front1`."
-        },
-        "clip_r2": {
-          "type": "integer",
-          "default": 0,
-          "fa_icon": "fas fa-cut",
-          "description": "Remove bp from the 5' end of read 2.",
-          "help_text": "Corresponds to fastp `--trim_front2`."
-        },
-        "three_prime_clip_r1": {
-          "type": "integer",
-          "default": 0,
-          "fa_icon": "fas fa-cut",
-          "description": "Remove bp from the 3' end of read 1.",
-          "help_text": "Corresponds to fastp `--trim_tail1`."
-        },
-        "three_prime_clip_r2": {
-          "type": "integer",
-          "default": 0,
-          "fa_icon": "fas fa-cut",
-          "description": "Remove bp from the 3' end of read 2.",
-          "help_text": "Corresponds to fastp `--trim_tail2`."
-        },
-        "trim_nextseq": {
-          "type": "integer",
-          "default": 0,
-          "fa_icon": "fas fa-cut",
-          "description": "Enable poly-G tail trimming (NextSeq/NovaSeq two-color).",
-          "help_text": "Corresponds to fastp polyG trimming."
-        },
-        "length_required": {
-          "type": "integer",
-          "default": 15,
-          "fa_icon": "fas fa-cut",
-          "description": "Minimum length of reads to keep after trimming.",
-          "help_text": "Corresponds to fastp `--length_required`."
-        },
-        "save_trimmed": {
-          "type": "boolean",
-          "default": false,
-          "fa_icon": "fas fa-save",
-          "description": "Save trimmed FASTQ intermediates."
-        },
-        "umi_read_structure": {
-          "type": "string",
-          "default": "",
-          "fa_icon": "fas fa-tape",
-          "description": "UMI read structure (optional).",
-          "help_text": "One structure for one-end UMI (e.g. '2M11S+T'), or two structures separated by a space for both-end UMIs."
-        },
-        "group_by_umi_strategy": {
-          "type": "string",
-          "default": "Adjacency",
-          "fa_icon": "fas fa-tape",
-          "description": "UMI grouping strategy.",
-          "help_text": "Allowed values: Identity, Edit, Adjacency, Paired"
-        },
-        "save_split_fastqs": {
-          "type": "boolean",
-          "default": false,
-          "fa_icon": "fas fa-vial",
-          "description": "Publish split FASTQs (testing/debug)."
-        }
-      }
     }
   },
 
   "allOf": [
-    { "$ref": "#/$defs/io_options" },
-    { "$ref": "#/$defs/fastq_preprocessing" }
+    { "$ref": "#/$defs/io_options" }
   ],
 
   "required": ["input", "outdir"],
