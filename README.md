@@ -124,14 +124,16 @@ Pipeline Configuration:
   - PASS variants only
 
 ## Performance Summary (ACMG Regions)
-- SNPS:
+### SNPS
+
 | Metric | Result |
 |---|---|
 | Precision | 94.8% |
 | Recall | 99.5% |
 | F1 Score | 97.1% |
 
-- INDELS:
+### INDELS
+
 | Metric | Result |
 |---|---|
 | Precision | 71% |
