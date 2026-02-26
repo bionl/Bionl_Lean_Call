@@ -8,8 +8,8 @@ params.scriptdir   = params.scriptdir   ?: "${workflow.projectDir}/scripts"
 params.template_dir= params.template_dir?: "${workflow.projectDir}/scripts/template-files"
 
 params.run_vep     = params.run_vep     ?: true
-params.min_dp   = params.min_dp   ?: 20
-params.min_qual = params.min_qual ?: 30
+params.min_dp   = params.min_dp   ?: 10
+params.min_qual = params.min_qual ?: 10
 // VEP resource params expected from main/config:
 // params.vep_fasta, params.revel_vcf, params.alpha_missense_vcf, params.clinvar_vcf
 
