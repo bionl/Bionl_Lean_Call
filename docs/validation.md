@@ -117,14 +117,59 @@ Variants were limited to ACMG SF v3.3 regions using BED-based filtering.
 
 ## 7.2 Quality Filtering
 
-Filtering thresholds applied:
+Caller-aware filtering thresholds were applied after consensus integration
+to balance sensitivity and precision.
 
-- PASS variants only
-- Minimum Depth (DP): ≥20
-- Minimum Genotype Quality (GQ): ≥20
+Variants were categorized based on caller origin:
 
-Filtering was performed prior to benchmarking metrics calculation.
+### Shared Calls (DeepVariant + HaplotypeCaller)
 
+Variants detected by both callers were retained using relaxed thresholds
+due to increased confidence from concordance.
+
+Criteria:
+- DP ≥ 10
+- GQ ≥ 10
+
+---
+
+### HaplotypeCaller-Only Calls
+
+Variants detected exclusively by GATK HaplotypeCaller required stricter
+filtering due to higher false positive susceptibility.
+
+Criteria:
+- QUAL ≥ 30
+- DP ≥ 10
+- GQ ≥ 20
+
+---
+
+### DeepVariant-Only Calls
+
+Variants detected exclusively by DeepVariant were retained using moderate
+quality thresholds reflecting DeepVariant’s precision-based model.
+
+Criteria:
+- QUAL ≥ 10
+- DP ≥ 10
+- GQ ≥ 20
+
+---
+
+All variants were additionally required to have:
+- FILTER = PASS
+
+## 7.3 Rationale for Threshold Selection
+
+Depth thresholds were selected based on whole-genome sequencing coverage
+distribution, where local depth variability results in many true variants
+having DP values below the global mean coverage.
+
+Consensus-supported variants allow relaxed genotype thresholds due to
+independent confirmation by multiple callers. Caller-specific thresholds
+were introduced to mitigate known artefacts associated with single-caller
+detections while preserving sensitivity within clinically relevant regions.
 ---
 
 # 8. Benchmarking Methodology
@@ -155,12 +200,19 @@ Metrics evaluated:
 
 
 ## 9.2 Final Validated Configuration (Post-filtering)
-
+### SNPS
 | Metric | Result |
 |---|---|
-| Precision | ≥94.8% |
-| Recall | 99.5% |
-| F1 Score | 97.1% |
+| Precision | ≥94% |
+| Recall | 99% |
+| F1 Score | 97% |
+
+### INDELS
+| Metric | Result |
+|---|---|
+| Precision | 71% |
+| Recall | 100% |
+| F1 Score | 83% |
 
 ---
 
@@ -219,10 +271,12 @@ clinical interpretation workflows under defined QC thresholds.
 - Variant Callers: DeepVariant + HaplotypeCaller
 - Reference: GRCh38
 - Target Regions: ACMG SF v3.3
-- Filtering:
-  - PASS only
-  - DP ≥20
-  - GQ ≥20
+- Filtering Strategy:
+  - PASS variants only
+  - Caller-aware thresholds:
+    - Shared (DV,HC): DP ≥10, GQ ≥10
+    - HC-only: QUAL ≥30, DP ≥10, GQ ≥20
+    - DV-only: QUAL ≥10, DP ≥10, GQ ≥20
 
 ---
 
