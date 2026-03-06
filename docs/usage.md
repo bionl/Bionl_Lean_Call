@@ -35,13 +35,14 @@ Main workflow steps:
 Create a CSV file with the following columns:
 
 ```csv
-patient,sex,status,sample,fastq_1,fastq_2,lane
-Patient001,XX,0,Sample_A,data/sample_A_R1.fastq.gz,data/sample_A_R2.fastq.gz,1
-Patient002,XY,0,Sample_B,data/sample_B_R1.fastq.gz,data/sample_B_R2.fastq.gz,1
+patient,assay,sex,status,sample,fastq_1,fastq_2,lane
+Patient001,WES,XX,0,Sample_A,data/sample_A_R1.fastq.gz,data/sample_A_R2.fastq.gz,1
+Patient002,WES,XY,0,Sample_B,data/sample_B_R1.fastq.gz,data/sample_B_R2.fastq.gz,1
 ```
 
 **Column Descriptions:**
 - `patient`: Patient identifier (can be the same for multiple samples)
+- `assay`: Assay type - use `WES`(Whole Exome Sequencing) or `WGS` (Whole genome sequencing)
 - `sex`: Biological sex - use `XX` (female), `XY` (male), or `0` (unknown)
 - `status`: Disease status - `0` (unaffected) or `1` (affected) (Define always as 0)
 - `sample`: Unique sample identifier
