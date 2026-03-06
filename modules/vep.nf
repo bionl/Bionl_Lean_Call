@@ -17,14 +17,15 @@ params.min_qual = params.min_qual ?: 10
 /********************  PROCESSES (unchanged logic, publish to per-sample dirs)  ********************/
 
 process BedFilterVCF {
-  tag "$sample"
-  publishDir "${params.outdir}/${sample}/vcf", mode: 'copy'
+  tag { "${meta.sample} (${meta.assay})" } // meta is a map containing sample and assay
+  publishDir "${params.outdir}/${meta.sample}/vcf", mode: 'copy'
   input:
-    tuple val(sample), path(vcf)
+    tuple val(meta), path(vcf)
     path bed
   output:
-    tuple val(sample), path("${sample}.bed_filtered.vcf.gz")
+    tuple val(meta), path("${meta.sample}.bed_filtered.vcf.gz")
   script:
+    def sample = meta.sample
   """
   tabix -p vcf $vcf || bcftools index -t $vcf
   bcftools view -f PASS -R $bed $vcf -Oz -o ${sample}.bed_filtered.vcf.gz
@@ -33,13 +34,14 @@ process BedFilterVCF {
 }
 
 process NormalizeVCF {
-  tag "$sample"
-  publishDir "${params.outdir}/${sample}/vcf", mode: 'copy'
+  tag { "${meta.sample} (${meta.assay})" } // meta is a map containing sample and assay
+  publishDir "${params.outdir}/${meta.sample}/vcf", mode: 'copy'
   input:
-    tuple val(sample), path(vcf)
+    tuple val(meta), path(vcf)
   output:
-    tuple val(sample), path("${sample}.normalized.vcf.gz")
+    tuple val(meta), path("${meta.sample}.normalized.vcf.gz")
   script:
+    def sample = meta.sample
   """
   bcftools norm -m -any $vcf -Oz -o ${sample}.normalized.vcf.gz
   tabix -p vcf ${sample}.normalized.vcf.gz
@@ -47,13 +49,14 @@ process NormalizeVCF {
 }
 
 process FilterVCF {
-  tag "$sample"
-  publishDir "${params.outdir}/${sample}/vcf", mode: 'copy'
+  tag { "${meta.sample} (${meta.assay})" } // meta is a map containing sample and assay
+  publishDir "${params.outdir}/${meta.sample}/vcf", mode: 'copy'
   input:
-    tuple val(sample), path(vcf)
+    tuple val(meta), path(vcf)
   output:
-    tuple val(sample), path("${sample}.filtered.vcf.gz")
+    tuple val(meta), path("${meta.sample}.filtered.vcf.gz")
   script:
+    def sample = meta.sample
   """
   bcftools view -i 'FORMAT/DP >= ${params.min_dp} && QUAL >= ${params.min_qual}' $vcf -Oz -o ${sample}.filtered.vcf.gz
   tabix -p vcf ${sample}.filtered.vcf.gz
@@ -61,13 +64,14 @@ process FilterVCF {
 }
 
 process AddVAF {
-  tag "$sample"
-  publishDir "${params.outdir}/${sample}/vcf", mode: 'copy'
+  tag { "${meta.sample} (${meta.assay})" } // meta is a map containing sample and assay 
+  publishDir "${params.outdir}/${meta.sample}/vcf", mode: 'copy'
   input:
-    tuple val(sample), path(vcf)
+    tuple val(meta), path(vcf)
   output:
-    tuple val(sample), path("${sample}.vaf_added.vcf.gz")
+    tuple val(meta), path("${meta.sample}.vaf_added.vcf.gz")
   script:
+    def sample = meta.sample
   """
   bcftools +fill-tags $vcf -Oz -o ${sample}.vaf_added.vcf.gz -- -t FORMAT/VAF
   tabix -p vcf ${sample}.vaf_added.vcf.gz
@@ -75,14 +79,15 @@ process AddVAF {
 }
 
 process BedFilterBAM {
-  tag "$sample"
-  publishDir "${params.outdir}/${sample}/qc", mode: 'copy'
+  tag { "${meta.sample} (${meta.assay})" } // meta is a map containing sample and assay
+  publishDir "${params.outdir}/${meta.sample}/qc", mode: 'copy'
   input:
-    tuple val(sample), path(vcf), path(bam)
+    tuple val(meta), path(vcf), path(bam)
     path bed
   output:
-    tuple val(sample), path("${sample}.bed_filtered.bam"), path("${sample}.bed_filtered.bam.bai")
+    tuple val(meta), path("${meta.sample}.bed_filtered.bam"), path("${meta.sample}.bed_filtered.bam.bai")
   script:
+    def sample = meta.sample
   """
   samtools view -L $bed -b -@ 16 $bam -o tmp.bam
   samtools sort -o ${sample}.bed_filtered.bam tmp.bam
@@ -91,14 +96,15 @@ process BedFilterBAM {
 }
 
 process CoverageSummary {
-  tag "$sample"
-  publishDir "${params.outdir}/${sample}/qc", mode: 'copy'
+  tag { "${meta.sample} (${meta.assay})" } // meta is a map containing sample and assay
+  publishDir "${params.outdir}/${meta.sample}/qc", mode: 'copy'
   input:
-    tuple val(sample), path(bam)
+    tuple val(meta), path(bam)
     path bed
   output:
-    tuple val(sample), path("${sample}_coverage_summary.sorted.txt"), path("${sample}_coverage_per_base.txt")
+    tuple val(meta), path("${meta.sample}_coverage_summary.sorted.txt"), path("${meta.sample}_coverage_per_base.txt")
   script:
+    def sample = meta.sample
   """
   bedtools coverage -a $bed -b $bam -d > ${sample}_coverage_per_base.txt
   awk '{
@@ -113,14 +119,15 @@ process CoverageSummary {
 }
 
 process R1R2Ratio {
-  tag "$sample"
-  publishDir "${params.outdir}/${sample}/qc", mode: 'copy'
+  tag { "${meta.sample} (${meta.assay})" } // meta is a map containing sample and assay   
+  publishDir "${params.outdir}/${meta.sample}/qc", mode: 'copy'
   input:
-    tuple val(sample), path(bam), path(bai)
+    tuple val(meta), path(bam), path(bai)
     path bed
   output:
-    tuple val(sample), path("${sample}_r1r2_per_exon.tsv")
+    tuple val(meta), path("${meta.sample}_r1r2_per_exon.tsv")
   script:
+    def sample = meta.sample
   """
   while read chrom start end ref_name; do
     region="\${chrom}:\${start}-\${end}"
@@ -132,14 +139,15 @@ process R1R2Ratio {
 }
 
 process ForwardReverseRatio {
-  tag "$sample"
-  publishDir "${params.outdir}/${sample}/qc", mode: 'copy'
+  tag { "${meta.sample} (${meta.assay})" } // meta is a map containing sample and assay 
+  publishDir "${params.outdir}/${meta.sample}/qc", mode: 'copy'
   input:
-    tuple val(sample), path(bam), path(bai)
+    tuple val(meta), path(bam), path(bai)
     path bed
   output:
-    tuple val(sample), path("${sample}_frstrand_per_exon.tsv")
+    tuple val(meta), path("${meta.sample}_frstrand_per_exon.tsv")
   script:
+    def sample = meta.sample
   """
   while read chrom start end ref_name; do
     region="\${chrom}:\${start}-\${end}"
@@ -151,46 +159,49 @@ process ForwardReverseRatio {
 }
 
 process SamtoolsFlagstat {
-  tag "$sample"
-  publishDir "${params.outdir}/${sample}/qc", mode: 'copy'
+  tag { "${meta.sample} (${meta.assay})" } // meta is a map containing sample and assay
+  publishDir "${params.outdir}/${meta.sample}/qc", mode: 'copy'
   input:
-    tuple val(sample), path(bam)
+    tuple val(meta), path(bam)
   output:
-    tuple val(sample), path("${sample}_flagstat.txt")
+    tuple val(meta), path("${meta.sample}_flagstat.txt")
   script:
+    def sample = meta.sample
   """
   samtools flagstat $bam > ${sample}_flagstat.txt
   """
 }
 
 process SamtoolsStats {
-  tag "$sample"
-  publishDir "${params.outdir}/${sample}/qc", mode: 'copy'
+  tag { "${meta.sample} (${meta.assay})" } // meta is a map containing sample and assay
+  publishDir "${params.outdir}/${meta.sample}/qc", mode: 'copy'
   input:
-    tuple val(sample), path(bam)
+    tuple val(meta), path(bam)
   output:
-    tuple val(sample), path("${sample}_stats.txt")
+    tuple val(meta), path("${meta.sample}_stats.txt")
   script:
+    def sample = meta.sample
   """
   samtools stats $bam > ${sample}_stats.txt
   """
 }
 process MosdepthRun {
-  tag "$sample"
-  publishDir "${params.outdir}/${sample}/qc", mode: 'copy'
+  tag { "${meta.sample} (${meta.assay})" } // meta is a map containing sample and assay 
+  publishDir "${params.outdir}/${meta.sample}/qc", mode: 'copy'
 
   input:
-    tuple val(sample), path(bam), path(bai)
+    tuple val(meta), path(bam), path(bai)
     path bed
 
   output:
-    tuple val(sample),
-      path("${sample}.mosdepth.summary.txt"),
-      path("${sample}.thresholds.bed.gz"),
-      path("${sample}.quantized.bed.gz")
+    tuple val(meta),
+      path("${meta.sample}.mosdepth.summary.txt"),
+      path("${meta.sample}.thresholds.bed.gz"),
+      path("${meta.sample}.quantized.bed.gz")
       //path("${sample}_coverage_summary.overall.txt")
 
   script:
+    def sample = meta.sample
   """
   echo "[\$(date -Is)] Starting mosdepth for ${sample}" >&2
   set -euo pipefail
@@ -211,23 +222,24 @@ process MosdepthRun {
 }
 
 process CoverageGapsAnnotation {
-  tag "$sample"
-  publishDir "${params.outdir}/${sample}/qc", mode: 'copy'
+  tag { "${meta.sample} (${meta.assay})" } // meta is a map containing sample and assay 
+  publishDir "${params.outdir}/${meta.sample}/qc", mode: 'copy'
 
   input:
-    tuple val(sample),
-      path("${sample}.quantized.bed.gz"),
-      path("${sample}.thresholds.bed.gz")
+    tuple val(meta),
+      path("${meta.sample}.quantized.bed.gz"),
+      path("${meta.sample}.thresholds.bed.gz")
     path bed
 
   output:
-    tuple val(sample),
-      path("${sample}.acmg_gaps_lt20.bed"),
-      path("${sample}.acmg_gaps_lt30.bed"),
-      path("${sample}.acmg_gaps_lt20.annot.bed"),
-      path("${sample}.acmg_gaps_lt30.annot.bed")
+    tuple val(meta),
+      path("${meta.sample}.acmg_gaps_lt20.bed"),
+      path("${meta.sample}.acmg_gaps_lt30.bed"),
+      path("${meta.sample}.acmg_gaps_lt20.annot.bed"),
+      path("${meta.sample}.acmg_gaps_lt30.annot.bed")
 
   script:
+    def sample = meta.sample
   """
   zcat ${sample}.quantized.bed.gz | awk '\$4=="LT20"' \
     | bedtools intersect -wa -a - -b $bed \
@@ -291,13 +303,14 @@ process CoverageGapsAnnotation {
 //}
 
 process SexCheck {
-  tag "$sample"
-  publishDir "${params.outdir}/${sample}/qc", mode: 'copy'
+  tag { "${meta.sample} (${meta.assay})" } // meta is a map containing sample and assay 
+  publishDir "${params.outdir}/${meta.sample}/qc", mode: 'copy'
   input:
-    tuple val(sample), path(bam)
+    tuple val(meta), path(bam)
   output:
-    tuple val(sample), path("${sample}_sex_check.txt")
+    tuple val(meta), path("${meta.sample}_sex_check.txt")
   script:
+    def sample = meta.sample
   """
   x_depth=\$(samtools idxstats $bam | awk '\$1=="X"{print \$3}')
   y_depth=\$(samtools idxstats $bam | awk '\$1=="Y"{print \$3}')
@@ -316,23 +329,24 @@ process SexCheck {
 }
 
 process BcftoolsStats {
-  tag "$sample"
-  publishDir "${params.outdir}/${sample}/qc", mode: 'copy'
+  tag { "${meta.sample} (${meta.assay})" } // meta is a map containing sample and assay 
+  publishDir "${params.outdir}/${meta.sample}/qc", mode: 'copy'
   input:
-    tuple val(sample), path(vcf)
+    tuple val(meta), path(vcf)
   output:
-    tuple val(sample), path("${sample}_bcftools_stats.txt")
+    tuple val(meta), path("${meta.sample}_bcftools_stats.txt")
   script:
+    def sample = meta.sample
   """
   bcftools stats $vcf > ${sample}_bcftools_stats.txt
   """
 }
 
 process VEP_Annotate {
-  tag "$sample"
-  publishDir "${params.outdir}/${sample}/vcf", mode: 'copy'
+  tag { "${meta.sample} (${meta.assay})" } // meta is a map containing sample and assay 
+  publishDir "${params.outdir}/${meta.sample}/vcf", mode: 'copy'
   input:
-    tuple val(sample), path(vcf)
+    tuple val(meta), path(vcf)
     path vep_cache
     path vep_fasta
     path vep_fasta_fai
@@ -350,8 +364,9 @@ process VEP_Annotate {
     path bayesdel_vcf_tbi
     path vep_plugins
   output:
-    tuple val(sample), path("${sample}.vep.vcf")
+    tuple val(meta), path("${meta.sample}.vep.vcf")
   script:
+    def sample = meta.sample
   """
   set -euo pipefail
   if [[ "$vcf" == *.vcf.gz ]]; then gunzip -c "$vcf" > INPUT_FOR_VEP.vcf; else cp "$vcf" INPUT_FOR_VEP.vcf; fi
@@ -372,10 +387,10 @@ process VEP_Annotate {
 }
 
 process LeanReport {
-  tag "$sample"
-  publishDir "${params.outdir}/${sample}/reports", mode: 'copy'
+  tag { "${meta.sample} (${meta.assay})" } // meta is a map containing sample and assay   
+  publishDir "${params.outdir}/${meta.sample}/reports", mode: 'copy'
   input:
-    tuple val(sample),
+    tuple val(meta),
           path(vcf), path(exon_cov), path(r1r2), path(frstrand),
           path(flagstat), path(stats),
           path(mosdepth_summary),
@@ -384,13 +399,14 @@ process LeanReport {
           path(thresholds)
     each path(script)
   output:
-    tuple val(sample), path("${sample}_report/${sample}_variants_lean.xlsx")
+    tuple val(meta), path("${meta.sample}_report/${meta.sample}_variants_lean.xlsx")
   script:
+    def sample = meta.sample
   """
   mkdir -p ${sample}_report
   python ${script} \
     $vcf $exon_cov $r1r2 $frstrand ${sample}_report/${sample}_variants_lean.xlsx \
-    --sample-id ${sample} --assay WES --build GRCh38 \
+    --sample-id ${sample} --assay ${meta.assay} --build GRCh38 \
     --flagstat ${flagstat} --stats ${stats} \
     --mosdepth-summary ${mosdepth_summary} \
     --acmg-thresholds ${thresholds} \
@@ -400,19 +416,22 @@ process LeanReport {
 }
 
 process GENERATE_ACMG_REPORT {
-  tag "$sample"
-  publishDir "${params.outdir}/${sample}/reports", mode: 'copy'
+  tag { "${meta.sample} (${meta.assay})" }
+  publishDir "${params.outdir}/${meta.sample}/reports", mode: 'copy'
   input:
-    tuple val(sample), path(excel_file)
+    tuple val(meta), path(excel_file)
     each path(python_skeleton)
     each path(template_dir)
   output:
-    tuple val(sample), path("${sample}_report/${sample}_clinical_report.html")
+    tuple val(meta), path("${meta.sample}_report/${meta.sample}_clinical_report.html")
   script:
+    def sample = meta.sample
+    def assay = meta.assay
   """
   python ${python_skeleton}/generate_report.py \
     ${excel_file} ${sample}_report \
     --sample-id ${sample} \
+    --assay ${assay} \
     --template-dir ${template_dir} \
     --format html
   """

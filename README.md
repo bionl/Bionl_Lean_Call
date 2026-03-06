@@ -32,10 +32,10 @@ The pipeline runs from FASTQ files using a standardized samplesheet.
 ### Example samplesheet
 
 ```csv
-patient,sex,status,sample,fastq_1,fastq_2,lane
-Patient001,XX,0,Sample_A,data/sample_A_R1.fastq.gz,data/sample_A_R2.fastq.gz,1
-Patient002,XY,0,Sample_B,data/sample_B_R1.fastq.gz,data/sample_B_R2.fastq.gz,1
-Patient003,XX,1,Sample_C,data/sample_C_R1.fastq.gz,data/sample_C_R2.fastq.gz,1
+patient,assay,sex,status,sample,fastq_1,fastq_2,lane
+Patient001,WES,XX,0,Sample_A,data/sample_A_R1.fastq.gz,data/sample_A_R2.fastq.gz,1
+Patient002,WES,XY,0,Sample_B,data/sample_B_R1.fastq.gz,data/sample_B_R2.fastq.gz,1
+Patient003,WES,XX,1,Sample_C,data/sample_C_R1.fastq.gz,data/sample_C_R2.fastq.gz,1
 ```
 
 The CSV should include:

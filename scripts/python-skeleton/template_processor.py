@@ -61,12 +61,28 @@ class TemplateProcessor:
 
         # Sample ID
         sample_id = data.get('sample_id', 'UNKNOWN')
-        html = html.replace('HG003', sample_id)
+        assay = (data.get("assay") or "WES").strip()   # expected: WES/WGS/NA
+        reference_build = data.get("reference_build", "GRCh38")
+
+        # 1) Replace sample id 
+        html = html.replace("HG003", sample_id)
+
+        # 2) Build assay labels
+        assay_short_map = {"WES": "WES", "WGS": "WGS", "NA": "NA"}
+        assay_long_map = {"WES": "Whole Exome Sequencing (WES)", "WGS": "Whole Genome Sequencing (WGS)", "NA":  "Not specified"}
+        assay_short = assay_short_map.get(assay, assay)
+        assay_long  = assay_long_map.get(assay, assay)
+
+        # 3) Replace LONG assay phrase first (prevents "Whole Exome..." staying for WGS)
+        html = html.replace("Whole Exome Sequencing (WES)", assay_long)
+        html = html.replace("Whole Genome Sequencing (WGS)", assay_long)
+        html = re.sub(r"\bWES\b", assay_short, html)
+        html = re.sub(r"\bWGS\b", assay_short, html)
+
 
         # Other header fields
         replacements = {
-            'WES': data.get('assay', 'WES'),
-            'GRCh38': data.get('reference_build', 'GRCh38'),
+            'GRCh38': reference_build,
             '2025-09-04 08:58': data.get('report_generated', ''),
             'Sarek 3.5.1 - ClinLEAN Reporting Workflow v1': data.get('pipeline', 'Bionl_Lean_call v1.0'),
             'ClinVar, gnomAD (v4.1), VEP/Ensembl (Release 115)': data.get('databases', 'ClinVar (2025-01), gnomAD v4.1, Ensembl VEP Release 115, REVEL (latest release), AlphaMissense (Science 2023, updated 2025-05) SpliceAI (version 1.3.1), BayesDel (version 1.0)'),

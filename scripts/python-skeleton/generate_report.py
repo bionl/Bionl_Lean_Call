@@ -48,6 +48,12 @@ def main():
     )
 
     parser.add_argument(
+        '--assay',
+        help='Assay type (e.g., WES, WGS, Panel)',
+        default='WES'
+    )
+
+    parser.add_argument(
         '--template-dir',
         default='./template-files',
         help='Directory containing HTML template files'
@@ -88,7 +94,7 @@ def main():
 
         # Step 2: Transform data for template
         print("Processing data...")
-        processed_data = excel_reader.process_for_template(data, sample_id)
+        processed_data = excel_reader.process_for_template(data, sample_id, assay=args.assay)
 
         # Step 3: Generate HTML from template
         print("Generating HTML...")
