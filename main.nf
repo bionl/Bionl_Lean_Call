@@ -87,7 +87,7 @@ workflow COLLECT_VARIANT_CALLING_OUTPUTS {
         // Collect HaplotypeCaller VCFs
         hc_vcf_ch = trigger
             .flatMap { 
-                file("${outdir}/variant_calling/haplotypecaller/*/*.vcf.gz", checkIfExists: !isGCS)
+                file("${outdir}/variant_calling/haplotypecaller/*/*filtered.vcf.gz", checkIfExists: !isGCS)
             }
             .filter { vcf -> 
                 vcf.name.endsWith('.vcf.gz') && 
