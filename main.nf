@@ -16,6 +16,9 @@ include { POST_SAREK } \
 include { CONSENSUS_CALLING } \
   from './modules/consensus.nf'
 
+include { DB_QC_EXPORT } \
+  from './modules/db_qc_export.nf'
+
 // ═══════════════════════════════════════════════════════════════════════════
 // PARAMETERS & VALIDATION
 // ═══════════════════════════════════════════════════════════════════════════
@@ -26,6 +29,8 @@ params.outdir                 = params.outdir ?: params.output
 params.bed                    = params.bed ?: "${workflow.projectDir}/data/annotated_merged_MANE_deduped.bed"
 //params.run_variant_calling    = params.run_variant_calling instanceof Boolean ? params.run_variant_calling : true
 params.create_consensus       = params.create_consensus instanceof Boolean ? params.create_consensus : true
+params.run_db_qc              = params.run_db_qc instanceof Boolean ? params.run_db_qc : true
+params.qc_bed                 = params.qc_bed ?: null
 params.ref_fasta              = params.ref_fasta ?: params.vep_fasta
 //params.vep_fasta              = params.vep_fasta ?: params.vep_fasta
 
@@ -392,7 +397,17 @@ workflow RUN_FULL_VARIANT_CALLING {
         }
 
 
-        // Run post-processing (meta-aware)
+        // QC export — runs in parallel, never blocks POST_SAREK.
+        // Uses its own BED (full capture kit) or runs genome-wide;
+        // the ACMG SF BED used by POST_SAREK is intentionally NOT reused here.
+        if (params.run_db_qc) {
+            qc_bed_ch = params.qc_bed
+                ? Channel.value(file(params.qc_bed, checkIfExists: true))
+                : Channel.value(file('NO_FILE'))
+            DB_QC_EXPORT(vcf_with_meta_ch, bam_with_meta_ch, qc_bed_ch)
+        }
+
+        // Run post-processing (meta-aware) — all samples always continue here
         POST_SAREK(vcf_with_meta_ch, bam_with_meta_ch, bed_ch)
 }
 
