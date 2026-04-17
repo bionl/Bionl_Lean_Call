@@ -2,8 +2,9 @@
 // ───────────────────────────────────────────────────────────────────────────
 // DB QC Export — per-sample QC metrics for downstream ingestion decisions.
 //
-// Runs samtools flagstat, mosdepth, and bcftools stats in parallel per
-// sample, then aggregates results into a structured JSON + TSV.
+// Reuses Sarek's existing QC outputs (samtools stats OR markdup metrics
+// for alignment; mosdepth for coverage). Only runs bcftools stats on the
+// consensus VCF.
 //
 // This module is advisory only — it never blocks or filters samples.
 // ───────────────────────────────────────────────────────────────────────────
@@ -13,56 +14,6 @@ params.outdir    = params.outdir    ?: "results"
 params.scriptdir = params.scriptdir ?: "${workflow.projectDir}/scripts"
 
 /********************  PROCESSES  ********************/
-
-process DB_QC_FLAGSTAT {
-    tag { "${meta.sample}" }
-
-    input:
-        tuple val(meta), path(bam), path(bai)
-
-    output:
-        tuple val(meta), path("${meta.sample}.flagstat.txt")
-
-    script:
-    def sample = meta.sample
-    """
-    samtools flagstat ${bam} > ${sample}.flagstat.txt
-    """
-}
-
-process DB_QC_MOSDEPTH {
-    tag { "${meta.sample}" }
-
-    input:
-        tuple val(meta), path(bam), path(bai)
-        path bed
-
-    output:
-        tuple val(meta),
-            path("${meta.sample}.mosdepth.summary.txt"),
-            path("${meta.sample}.thresholds.bed.gz"),
-            path("${meta.sample}.mosdepth.global.dist.txt")
-
-    script:
-    def sample = meta.sample
-    def has_bed = bed.name != 'NO_FILE'
-    def bed_args = has_bed ? "--by ${bed} --thresholds 10,20,30,50" : ""
-    """
-    ln -sf ${bam} ${sample}.bam
-    ln -sf ${bai} ${sample}.bam.bai
-
-    mosdepth \\
-        --no-per-base \\
-        ${bed_args} \\
-        --fast-mode \\
-        ${sample} ${sample}.bam
-
-    # Ensure thresholds file exists even for WGS (no --by)
-    if [ ! -f ${sample}.thresholds.bed.gz ]; then
-        echo -n | gzip > ${sample}.thresholds.bed.gz
-    fi
-    """
-}
 
 process DB_QC_VCFSTATS {
     tag { "${meta.sample}" }
@@ -98,9 +49,9 @@ process DB_QC_EXPORT_JSON {
 
     input:
         tuple val(meta),
-            path(flagstat),
+            path(alignment_file),
+            val(alignment_type),
             path(mosdepth_summary),
-            path(mosdepth_thresholds),
             path(mosdepth_global_dist),
             path(bcftools_stats),
             path(callers)
@@ -112,11 +63,13 @@ process DB_QC_EXPORT_JSON {
     script:
     def sample = meta.sample
     def assay  = meta.assay ?: "NA"
+    def aln_arg = alignment_type == 'samtools_stats'
+        ? "--samtools-stats ${alignment_file}"
+        : "--markdup-metrics ${alignment_file}"
     """
     python ${script} \\
-        --flagstat ${flagstat} \\
+        ${aln_arg} \\
         --mosdepth-summary ${mosdepth_summary} \\
-        --mosdepth-thresholds ${mosdepth_thresholds} \\
         --mosdepth-global-dist ${mosdepth_global_dist} \\
         --bcftools-stats ${bcftools_stats} \\
         --callers ${callers} \\
@@ -146,24 +99,26 @@ process DB_QC_AGGREGATE {
 
 workflow DB_QC_EXPORT {
     take:
-        vcf_ch   // tuple(meta, vcf)
-        bam_ch   // tuple(meta, bam, bai)
-        bed_ch   // value channel with BED file
+        vcf_ch                // tuple(meta, vcf) — consensus VCF
+        alignment_qc_ch       // tuple(meta, file, type) — samtools_stats or markdup_metrics
+        mosdepth_summary_ch   // tuple(meta, summary) — from Sarek
+        mosdepth_dist_ch      // tuple(meta, dist) — from Sarek
 
     main:
         qc_script_ch = Channel
             .fromPath("${params.scriptdir}/compute_qc_metrics.py")
             .first()
 
-        // Three independent per-sample analyses
-        DB_QC_FLAGSTAT(bam_ch)
-        DB_QC_MOSDEPTH(bam_ch, bed_ch)
+        // Only variant stats needs to run — alignment & coverage come from Sarek
         DB_QC_VCFSTATS(vcf_ch)
 
         // Join all outputs by meta key → single tuple per sample
-        qc_input_ch = DB_QC_FLAGSTAT.out                          // (meta, flagstat)
-            .join(DB_QC_MOSDEPTH.out)                             // + (summary, thresholds, global_dist)
-            .join(DB_QC_VCFSTATS.out)                             // + (bcfstats, callers)
+        // alignment_qc_ch carries a type tag through the join
+        qc_input_ch = alignment_qc_ch                                 // (meta, file, type)
+            .join(mosdepth_summary_ch)                                 // + (summary)
+            .join(mosdepth_dist_ch)                                    // + (dist)
+            .join(DB_QC_VCFSTATS.out)                                  // + (bcfstats, callers)
+        // result: (meta, alignment_file, alignment_type, summary, dist, bcfstats, callers)
 
         DB_QC_EXPORT_JSON(qc_input_ch, qc_script_ch)
 
