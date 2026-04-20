@@ -16,6 +16,9 @@ include { POST_SAREK } \
 include { CONSENSUS_CALLING } \
   from './modules/consensus.nf'
 
+include { DB_QC_EXPORT } \
+  from './modules/db_qc_export.nf'
+
 // ═══════════════════════════════════════════════════════════════════════════
 // PARAMETERS & VALIDATION
 // ═══════════════════════════════════════════════════════════════════════════
@@ -26,6 +29,7 @@ params.outdir                 = params.outdir ?: params.output
 params.bed                    = params.bed ?: "${workflow.projectDir}/data/annotated_merged_MANE_deduped.bed"
 //params.run_variant_calling    = params.run_variant_calling instanceof Boolean ? params.run_variant_calling : true
 params.create_consensus       = params.create_consensus instanceof Boolean ? params.create_consensus : true
+params.run_db_qc              = params.run_db_qc instanceof Boolean ? params.run_db_qc : true
 params.ref_fasta              = params.ref_fasta ?: params.vep_fasta
 //params.vep_fasta              = params.vep_fasta ?: params.vep_fasta
 
@@ -87,7 +91,7 @@ workflow COLLECT_VARIANT_CALLING_OUTPUTS {
         // Collect HaplotypeCaller VCFs
         hc_vcf_ch = trigger
             .flatMap { 
-                file("${outdir}/variant_calling/haplotypecaller/*/*.vcf.gz", checkIfExists: !isGCS)
+                file("${outdir}/variant_calling/haplotypecaller/*/*filtered.vcf.gz", checkIfExists: !isGCS)
             }
             .filter { vcf -> 
                 vcf.name.endsWith('.vcf.gz') && 
@@ -122,10 +126,53 @@ workflow COLLECT_VARIANT_CALLING_OUTPUTS {
                 tuple(sample, bam, bai)
             }
 
+        // Collect Sarek QC reports (reused by DB_QC_EXPORT to avoid re-running tools)
+
+        // Alignment QC: prefer samtools stats, fall back to markdup metrics
+        samtools_stats_raw = trigger
+            .flatMap {
+                file("${outdir}/reports/samtools/*/*.md.cram.stats", checkIfExists: !isGCS)
+            }
+            .map { f -> tuple(f.parent.name, f, 'samtools_stats') }
+
+        markdup_raw = trigger
+            .flatMap {
+                file("${outdir}/reports/markduplicates/*/*.md.cram.metrics", checkIfExists: !isGCS)
+            }
+            .map { f -> tuple(f.parent.name, f, 'markdup_metrics') }
+
+        // Merge both sources per sample; prefer samtools stats when available
+        alignment_qc_ch = samtools_stats_raw
+            .mix(markdup_raw)
+            .groupTuple(by: 0)
+            .map { sample, files, types ->
+                def idx = types.indexOf('samtools_stats')
+                if (idx >= 0) {
+                    tuple(sample, files[idx], 'samtools_stats')
+                } else {
+                    tuple(sample, files[0], 'markdup_metrics')
+                }
+            }
+
+        mosdepth_summary_ch = trigger
+            .flatMap {
+                file("${outdir}/reports/mosdepth/*/*.md.mosdepth.summary.txt", checkIfExists: !isGCS)
+            }
+            .map { summary -> tuple(summary.parent.name, summary) }
+
+        mosdepth_dist_ch = trigger
+            .flatMap {
+                file("${outdir}/reports/mosdepth/*/*.md.mosdepth.global.dist.txt", checkIfExists: !isGCS)
+            }
+            .map { dist -> tuple(dist.parent.name, dist) }
+
     emit:
-        dv_vcf = dv_vcf_ch
-        hc_vcf = hc_vcf_ch
-        bam = bam_ch
+        dv_vcf           = dv_vcf_ch
+        hc_vcf           = hc_vcf_ch
+        bam              = bam_ch
+        alignment_qc     = alignment_qc_ch       // tuple(sample, file, type)
+        mosdepth_summary = mosdepth_summary_ch
+        mosdepth_dist    = mosdepth_dist_ch
 }
 
 workflow RUN_FROM_VARIANT_CALLING_OUTDIR {
@@ -392,7 +439,32 @@ workflow RUN_FULL_VARIANT_CALLING {
         }
 
 
-        // Run post-processing (meta-aware)
+        // QC export — reuses Sarek's alignment/coverage QC outputs,
+        // only runs bcftools stats on the consensus VCF.
+        // Runs in parallel with POST_SAREK, never blocks it.
+        if (params.run_db_qc) {
+            def alignment_qc_meta_ch = COLLECT_VARIANT_CALLING_OUTPUTS.out.alignment_qc
+                .map { sample, f, type ->
+                    tuple([ sample: sample, assay: assayMap.get(sample, 'NA') ], f, type)
+                }
+            def mosdepth_summary_meta_ch = COLLECT_VARIANT_CALLING_OUTPUTS.out.mosdepth_summary
+                .map { sample, summary ->
+                    tuple([ sample: sample, assay: assayMap.get(sample, 'NA') ], summary)
+                }
+            def mosdepth_dist_meta_ch = COLLECT_VARIANT_CALLING_OUTPUTS.out.mosdepth_dist
+                .map { sample, dist ->
+                    tuple([ sample: sample, assay: assayMap.get(sample, 'NA') ], dist)
+                }
+
+            DB_QC_EXPORT(
+                vcf_with_meta_ch,
+                alignment_qc_meta_ch,
+                mosdepth_summary_meta_ch,
+                mosdepth_dist_meta_ch
+            )
+        }
+
+        // Run post-processing (meta-aware) — all samples always continue here
         POST_SAREK(vcf_with_meta_ch, bam_with_meta_ch, bed_ch)
 }
 
