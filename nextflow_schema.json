@@ -24,6 +24,11 @@
           "title": "Output directory",
           "description": "Where to write results (local path or gs://).",
           "format": "directory-path"
+        },
+        "run_id": {
+          "type": "string",
+          "title": "Run identifier",
+          "description": "Identifier for this pipeline run. Written into the first column of ${outdir}/manifest/run_output_manifest.tsv. If omitted, Nextflow's auto-generated workflow.runName is used."
         }
       }
     }

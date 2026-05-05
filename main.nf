@@ -19,6 +19,9 @@ include { CONSENSUS_CALLING } \
 include { DB_QC_EXPORT } \
   from './modules/db_qc_export.nf'
 
+include { MANIFEST } \
+  from './modules/manifest.nf'
+
 // ═══════════════════════════════════════════════════════════════════════════
 // PARAMETERS & VALIDATION
 // ═══════════════════════════════════════════════════════════════════════════
@@ -30,6 +33,10 @@ params.bed                    = params.bed ?: "${workflow.projectDir}/data/annot
 //params.run_variant_calling    = params.run_variant_calling instanceof Boolean ? params.run_variant_calling : true
 params.create_consensus       = params.create_consensus instanceof Boolean ? params.create_consensus : true
 params.run_db_qc              = params.run_db_qc instanceof Boolean ? params.run_db_qc : true
+// Run identifier propagated to the run-output manifest (consumed by the
+// downstream DB ingestion pipeline). Falls back to workflow.runName at
+// manifest-build time if left null.
+params.run_id                 = params.run_id ?: null
 params.ref_fasta              = params.ref_fasta ?: params.vep_fasta
 //params.vep_fasta              = params.vep_fasta ?: params.vep_fasta
 
@@ -462,6 +469,18 @@ workflow RUN_FULL_VARIANT_CALLING {
                 mosdepth_summary_meta_ch,
                 mosdepth_dist_meta_ch
             )
+
+            // Final run-output manifest. Aggregates per-sample tuples of
+            // (final VCF, coverage BAM, QC JSON) into a single TSV consumed
+            // by the *separate* DB ingestion pipeline. This step only
+            // produces the manifest — it never starts ingestion.
+            MANIFEST(
+                vcf_with_meta_ch,
+                bam_with_meta_ch,
+                DB_QC_EXPORT.out.qc_json
+            )
+        } else {
+            log.warn "params.run_db_qc=false → skipping run_output_manifest.tsv (QC Gate JSON is required to populate qc_status / qc_recommendation)."
         }
 
         // Run post-processing (meta-aware) — all samples always continue here
