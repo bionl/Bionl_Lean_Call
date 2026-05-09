@@ -19,20 +19,30 @@ import json
 import re
 from pathlib import Path
 
-QC_VERSION = "1.0"
+QC_VERSION = "1.1"
 
+# Thresholds are evaluated against the consensus VCF *before* the ACMG SF
+# BED restriction (i.e. the genome/exome-wide consensus VCF that
+# DB_QC_VCFSTATS runs `bcftools stats` on). The variant-count bounds are
+# coarse sanity checks meant to catch catastrophic failures (truncated
+# FASTQ, sample-swap, contamination, wrong reference) that the alignment
+# / coverage thresholds alone can miss.
 THRESHOLDS = {
     "WES": {
         "min_mapped_pct": 95.0,
         "max_duplicate_pct": 30.0,
         "min_mean_coverage": 80.0,
         "min_pct_20x": 95.0,
+        "min_pass_variants": 15000,
+        "max_pass_variants": 70000,
     },
     "WGS": {
         "min_mapped_pct": 95.0,
         "max_duplicate_pct": 20.0,
         "min_mean_coverage": 30.0,
         "min_pct_20x": 90.0,
+        "min_pass_variants": 3500000,
+        "max_pass_variants": 6000000,
     },
 }
 DEFAULT_THRESHOLDS = THRESHOLDS["WES"]
@@ -241,8 +251,12 @@ def parse_caller_composition(path):
 # QC evaluation
 # ---------------------------------------------------------------------------
 
-def evaluate_qc(alignment, coverage, thresholds):
-    """Compare metrics against thresholds; return status, recommendation, flags."""
+def evaluate_qc(alignment, coverage, variant_summary, thresholds):
+    """Compare metrics against thresholds; return status, recommendation, flags.
+
+    variant_summary["pass_variants"] is the number of records in the
+    *consensus* VCF (i.e. before the ACMG SF BED restriction).
+    """
     flags = []
 
     if alignment.get("mapped_pct", 100) < thresholds["min_mapped_pct"]:
@@ -256,6 +270,12 @@ def evaluate_qc(alignment, coverage, thresholds):
 
     if coverage["pct_20x"] < thresholds["min_pct_20x"]:
         flags.append(f"LOW_20X_COVERAGE:{coverage['pct_20x']}")
+
+    pass_variants = variant_summary.get("pass_variants", 0)
+    if "min_pass_variants" in thresholds and pass_variants < thresholds["min_pass_variants"]:
+        flags.append(f"LOW_VARIANT_COUNT:{pass_variants}")
+    if "max_pass_variants" in thresholds and pass_variants > thresholds["max_pass_variants"]:
+        flags.append(f"HIGH_VARIANT_COUNT:{pass_variants}")
 
     qc_status = "FAIL" if flags else "PASS"
     recommendation = "HOLD" if flags else "READY"
@@ -310,7 +330,9 @@ def main():
     variant_summary = parse_bcftools_stats(args.bcftools_stats)
     caller_comp = parse_caller_composition(args.callers)
 
-    qc_status, recommendation, flags = evaluate_qc(alignment, coverage, thresholds)
+    qc_status, recommendation, flags = evaluate_qc(
+        alignment, coverage, variant_summary, thresholds
+    )
 
     result = {
         "sample": args.sample,
