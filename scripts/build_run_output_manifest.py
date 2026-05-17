@@ -21,12 +21,15 @@ A single TSV with the columns:
 
 This script never filters samples — every sample in --sample-info appears
 in the manifest. Filtering on qc_recommendation == "READY" is the
-responsibility of the downstream DB ingestion pipeline.
+responsibility of the downstream DB ingestion pipeline. REVIEW-tier samples
+require manual triage; FAIL-tier samples should not be ingested.
 
 QC field resolution (lenient on purpose):
     qc_status         <- json["qc_status"]   or json["status"]
+                          (PASS | REVIEW | FAIL)
     qc_recommendation <- json["db_ingestion_recommendation"]
                          or json["recommendation"]
+                         (READY | REVIEW | FAIL)
 
 Missing JSONs or missing fields produce empty strings rather than errors,
 so the manifest is always emitted.

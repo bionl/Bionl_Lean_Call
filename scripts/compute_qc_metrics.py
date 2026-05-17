@@ -29,20 +29,36 @@ QC_VERSION = "1.1"
 # / coverage thresholds alone can miss.
 THRESHOLDS = {
     "WES": {
+        # Strict (READY)
         "min_mapped_pct": 95.0,
         "max_duplicate_pct": 30.0,
         "min_mean_coverage": 80.0,
         "min_pct_20x": 95.0,
         "min_pass_variants": 15000,
         "max_pass_variants": 70000,
+        # Relaxed (REVIEW)
+        "review_min_mapped_pct": 80.0,
+        "review_max_duplicate_pct": 50.0,
+        "review_min_mean_coverage": 30.0,
+        "review_min_pct_20x": 80.0,
+        "review_min_pass_variants": 8000,
+        "review_max_pass_variants": 120000,
     },
     "WGS": {
+        # Strict (READY)
         "min_mapped_pct": 95.0,
         "max_duplicate_pct": 20.0,
         "min_mean_coverage": 30.0,
         "min_pct_20x": 90.0,
         "min_pass_variants": 3500000,
         "max_pass_variants": 6000000,
+        # Relaxed (REVIEW) — variant bounds need empirical validation on real cohorts
+        "review_min_mapped_pct": 80.0,
+        "review_max_duplicate_pct": 40.0,
+        "review_min_mean_coverage": 15.0,
+        "review_min_pct_20x": 70.0,
+        "review_min_pass_variants": 1000000,
+        "review_max_pass_variants": 10000000,
     },
 }
 DEFAULT_THRESHOLDS = THRESHOLDS["WES"]
@@ -252,34 +268,60 @@ def parse_caller_composition(path):
 # ---------------------------------------------------------------------------
 
 def evaluate_qc(alignment, coverage, variant_summary, thresholds):
-    """Compare metrics against thresholds; return status, recommendation, flags.
+    """Three-tier QC: READY (strict pass), REVIEW (relaxed pass), FAIL.
 
     variant_summary["pass_variants"] is the number of records in the
     *consensus* VCF (i.e. before the ACMG SF BED restriction).
     """
-    flags = []
+    metrics = {
+        "mapped_pct": alignment.get("mapped_pct", 100),
+        "duplicate_pct": alignment.get("duplicate_pct", 0),
+        "mean_coverage": coverage["mean_coverage"],
+        "pct_20x": coverage["pct_20x"],
+        "pass_variants": variant_summary.get("pass_variants", 0),
+    }
 
-    if alignment.get("mapped_pct", 100) < thresholds["min_mapped_pct"]:
-        flags.append(f"LOW_MAPPED_PCT:{alignment['mapped_pct']}")
+    strict_flags = []
+    relaxed_flags = []
 
-    if alignment.get("duplicate_pct", 0) > thresholds["max_duplicate_pct"]:
-        flags.append(f"HIGH_DUPLICATE_PCT:{alignment['duplicate_pct']}")
+    if metrics["mapped_pct"] < thresholds["min_mapped_pct"]:
+        strict_flags.append(f"LOW_MAPPED_PCT:{metrics['mapped_pct']}")
+    if metrics["duplicate_pct"] > thresholds["max_duplicate_pct"]:
+        strict_flags.append(f"HIGH_DUPLICATE_PCT:{metrics['duplicate_pct']}")
+    if metrics["mean_coverage"] < thresholds["min_mean_coverage"]:
+        strict_flags.append(f"LOW_MEAN_COVERAGE:{metrics['mean_coverage']}")
+    if metrics["pct_20x"] < thresholds["min_pct_20x"]:
+        strict_flags.append(f"LOW_20X_COVERAGE:{metrics['pct_20x']}")
+    if metrics["pass_variants"] < thresholds["min_pass_variants"]:
+        strict_flags.append(f"LOW_VARIANT_COUNT:{metrics['pass_variants']}")
+    if metrics["pass_variants"] > thresholds["max_pass_variants"]:
+        strict_flags.append(f"HIGH_VARIANT_COUNT:{metrics['pass_variants']}")
 
-    if coverage["mean_coverage"] < thresholds["min_mean_coverage"]:
-        flags.append(f"LOW_MEAN_COVERAGE:{coverage['mean_coverage']}")
+    if strict_flags:
+        if metrics["mapped_pct"] < thresholds["review_min_mapped_pct"]:
+            relaxed_flags.append(f"LOW_MAPPED_PCT:{metrics['mapped_pct']}")
+        if metrics["duplicate_pct"] > thresholds["review_max_duplicate_pct"]:
+            relaxed_flags.append(f"HIGH_DUPLICATE_PCT:{metrics['duplicate_pct']}")
+        if metrics["mean_coverage"] < thresholds["review_min_mean_coverage"]:
+            relaxed_flags.append(f"LOW_MEAN_COVERAGE:{metrics['mean_coverage']}")
+        if metrics["pct_20x"] < thresholds["review_min_pct_20x"]:
+            relaxed_flags.append(f"LOW_20X_COVERAGE:{metrics['pct_20x']}")
+        if metrics["pass_variants"] < thresholds["review_min_pass_variants"]:
+            relaxed_flags.append(f"LOW_VARIANT_COUNT:{metrics['pass_variants']}")
+        if metrics["pass_variants"] > thresholds["review_max_pass_variants"]:
+            relaxed_flags.append(f"HIGH_VARIANT_COUNT:{metrics['pass_variants']}")
 
-    if coverage["pct_20x"] < thresholds["min_pct_20x"]:
-        flags.append(f"LOW_20X_COVERAGE:{coverage['pct_20x']}")
+    if not strict_flags:
+        qc_status = "PASS"
+        recommendation = "READY"
+    elif not relaxed_flags:
+        qc_status = "REVIEW"
+        recommendation = "REVIEW"
+    else:
+        qc_status = "FAIL"
+        recommendation = "FAIL"
 
-    pass_variants = variant_summary.get("pass_variants", 0)
-    if "min_pass_variants" in thresholds and pass_variants < thresholds["min_pass_variants"]:
-        flags.append(f"LOW_VARIANT_COUNT:{pass_variants}")
-    if "max_pass_variants" in thresholds and pass_variants > thresholds["max_pass_variants"]:
-        flags.append(f"HIGH_VARIANT_COUNT:{pass_variants}")
-
-    qc_status = "FAIL" if flags else "PASS"
-    recommendation = "HOLD" if flags else "READY"
-    return qc_status, recommendation, flags
+    return qc_status, recommendation, strict_flags, relaxed_flags
 
 
 # ---------------------------------------------------------------------------
@@ -330,9 +372,10 @@ def main():
     variant_summary = parse_bcftools_stats(args.bcftools_stats)
     caller_comp = parse_caller_composition(args.callers)
 
-    qc_status, recommendation, flags = evaluate_qc(
+    qc_status, recommendation, strict_flags, relaxed_flags = evaluate_qc(
         alignment, coverage, variant_summary, thresholds
     )
+    flags = strict_flags + relaxed_flags
 
     result = {
         "sample": args.sample,
@@ -357,6 +400,8 @@ def main():
             "het_hom_ratio": variant_summary["het_hom_ratio"],
         },
         "thresholds": thresholds,
+        "strict_flags": strict_flags,
+        "relaxed_flags": relaxed_flags,
         "flags": flags,
         "db_ingestion_recommendation": recommendation,
     }
