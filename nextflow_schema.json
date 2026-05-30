@@ -29,6 +29,12 @@
           "type": "string",
           "title": "Run identifier",
           "description": "Identifier for this pipeline run. Written into the first column of ${outdir}/manifest/run_output_manifest.tsv. If omitted, Nextflow's auto-generated workflow.runName is used."
+        },
+        "somatic_mode": {
+          "type": "boolean",
+          "title": "Somatic mode",
+          "description": "When true, runs Mutect2 via Sarek instead of germline callers. Samples with status=1 are tumor; status=0 are matched normal (optional — tumor-only is also supported).",
+          "default": false
         }
       }
     }

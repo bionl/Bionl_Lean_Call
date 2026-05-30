@@ -33,6 +33,7 @@ params.bed                    = params.bed ?: "${workflow.projectDir}/data/annot
 //params.run_variant_calling    = params.run_variant_calling instanceof Boolean ? params.run_variant_calling : true
 params.create_consensus       = params.create_consensus instanceof Boolean ? params.create_consensus : true
 params.run_db_qc              = params.run_db_qc instanceof Boolean ? params.run_db_qc : true
+params.somatic_mode           = params.somatic_mode instanceof Boolean ? params.somatic_mode : false
 // Run identifier propagated to the run-output manifest (consumed by the
 // downstream DB ingestion pipeline). Falls back to workflow.runName at
 // manifest-build time if left null.
@@ -358,12 +359,23 @@ workflow RUN_FULL_VARIANT_CALLING {
         bed_ch
 
     main:
-        log.info """
+        // Set Sarek tool selection based on mode
+        if (params.somatic_mode) {
+            params.tools = "mutect2"
+            log.info """
+        ╔════════════════════════════════════════════════════════════╗
+        ║  Running somatic variant calling pipeline (Sarek/Mutect2)  ║
+        ║  Tumor-only and tumor+normal pairs supported               ║
+        ╚════════════════════════════════════════════════════════════╝
+        """.stripIndent()
+        } else {
+            log.info """
         ╔════════════════════════════════════════════════════════════╗
         ║  Running full variant calling pipeline (Sarek)             ║
         ║  Consensus calling: ${params.create_consensus ? 'ENABLED' : 'DISABLED'}
         ╚════════════════════════════════════════════════════════════╝
         """.stripIndent()
+        }
 
         PIPELINE_INITIALISATION(
             params.version,
@@ -410,30 +422,33 @@ workflow RUN_FULL_VARIANT_CALLING {
             params.outdir
         )
 
-        // Create consensus VCF if enabled
-        if (params.create_consensus) {
+        // Determine final VCF channel based on mode
+        if (params.somatic_mode) {
+            // Mutect2 filtered VCFs: variant_calling/mutect2/{id}/*.mutect2.filtered.vcf.gz
+            // id is the sample name (tumor-only) or patient name (paired)
+            def isGCS = isGcsPath(params.outdir)
+            final_vcf_ch = NFCORE_SAREK.out.multiqc_report
+                .flatMap {
+                    file("${params.outdir}/variant_calling/mutect2/*/*.mutect2.filtered.vcf.gz", checkIfExists: !isGCS)
+                }
+                .filter { vcf -> vcf.name.endsWith('.vcf.gz') && !vcf.name.endsWith('.tbi') }
+                .map { vcf -> tuple(vcf.parent.name, vcf) }
+        } else if (params.create_consensus) {
             ref_fasta_ch = Channel.value(file(params.ref_fasta))
-            ref_fai_ch = Channel.value(file(params.ref_fasta + ".fai"))
-            
+            ref_fai_ch   = Channel.value(file(params.ref_fasta + ".fai"))
+
             CONSENSUS_CALLING(
                 COLLECT_VARIANT_CALLING_OUTPUTS.out.dv_vcf,
                 COLLECT_VARIANT_CALLING_OUTPUTS.out.hc_vcf,
                 ref_fasta_ch,
                 ref_fai_ch
             )
-            
+
             final_vcf_ch = CONSENSUS_CALLING.out.consensus_vcf
         } else {
-            // Use DeepVariant VCFs by default (or could use HC, make configurable)
             final_vcf_ch = COLLECT_VARIANT_CALLING_OUTPUTS.out.dv_vcf
         }
 
-        // Run post-processing
-        //POST_SAREK(
-        //    final_vcf_ch, 
-        //    COLLECT_VARIANT_CALLING_OUTPUTS.out.bam, 
-        //    bed_ch
-        //)
         // Attach meta (sample + assay) to channels for downstream reporting
         def vcf_with_meta_ch = final_vcf_ch.map { sample, vcf ->
             def meta = [ sample: sample, assay: assayMap.get(sample, 'NA') ]
@@ -445,10 +460,7 @@ workflow RUN_FULL_VARIANT_CALLING {
             tuple(meta, bam, bai)
         }
 
-
-        // QC export — reuses Sarek's alignment/coverage QC outputs,
-        // only runs bcftools stats on the consensus VCF.
-        // Runs in parallel with POST_SAREK, never blocks it.
+        // QC export — reuses Sarek's alignment/coverage QC outputs
         if (params.run_db_qc) {
             def alignment_qc_meta_ch = COLLECT_VARIANT_CALLING_OUTPUTS.out.alignment_qc
                 .map { sample, f, type ->
@@ -470,10 +482,6 @@ workflow RUN_FULL_VARIANT_CALLING {
                 mosdepth_dist_meta_ch
             )
 
-            // Final run-output manifest. Aggregates per-sample tuples of
-            // (final VCF, coverage BAM, QC JSON) into a single TSV consumed
-            // by the *separate* DB ingestion pipeline. This step only
-            // produces the manifest — it never starts ingestion.
             MANIFEST(
                 vcf_with_meta_ch,
                 bam_with_meta_ch,
@@ -483,8 +491,10 @@ workflow RUN_FULL_VARIANT_CALLING {
             log.warn "params.run_db_qc=false → skipping run_output_manifest.tsv (QC Gate JSON is required to populate qc_status / qc_recommendation)."
         }
 
-        // Run post-processing (meta-aware) — all samples always continue here
-        POST_SAREK(vcf_with_meta_ch, bam_with_meta_ch, bed_ch)
+        // POST_SAREK (VEP annotation) is germline-only — skip in somatic mode
+        if (!params.somatic_mode) {
+            POST_SAREK(vcf_with_meta_ch, bam_with_meta_ch, bed_ch)
+        }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
