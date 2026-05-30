@@ -33,6 +33,7 @@ params.bed                    = params.bed ?: "${workflow.projectDir}/data/annot
 //params.run_variant_calling    = params.run_variant_calling instanceof Boolean ? params.run_variant_calling : true
 params.create_consensus       = params.create_consensus instanceof Boolean ? params.create_consensus : true
 params.run_db_qc              = params.run_db_qc instanceof Boolean ? params.run_db_qc : true
+params.somatic_mode           = params.somatic_mode instanceof Boolean ? params.somatic_mode : false
 // Run identifier propagated to the run-output manifest (consumed by the
 // downstream DB ingestion pipeline). Falls back to workflow.runName at
 // manifest-build time if left null.
@@ -487,16 +488,186 @@ workflow RUN_FULL_VARIANT_CALLING {
         POST_SAREK(vcf_with_meta_ch, bam_with_meta_ch, bed_ch)
 }
 
+workflow COLLECT_SOMATIC_OUTPUTS {
+    take:
+        trigger
+        outdir
+
+    main:
+        def isGCS = isGcsPath(outdir)
+
+        // Mutect2 filtered VCFs — Sarek writes under variant_calling/mutect2/{id}/
+        // For tumor-only: id == sample name; for paired: id == patient name.
+        // We key by the directory name (id) so downstream can match to BAMs.
+        mutect2_vcf_ch = trigger
+            .flatMap {
+                file("${outdir}/variant_calling/mutect2/*/*.mutect2.filtered.vcf.gz", checkIfExists: !isGCS)
+            }
+            .filter { vcf -> vcf.name.endsWith('.vcf.gz') && !vcf.name.endsWith('.tbi') }
+            .map { vcf -> tuple(vcf.parent.name, vcf) }
+
+        // BAMs from preprocessing (same as germline collector)
+        bam_ch = trigger
+            .flatMap {
+                file("${outdir}/preprocessing/mapped/*/*.sorted.bam", checkIfExists: !isGCS)
+            }
+            .map { bam ->
+                def sample  = bam.parent.name
+                def bamPath = bam.toString()
+                def baiPath = "${bamPath}.bai"
+                def bai
+                if (isGCS) {
+                    bai = file(baiPath, checkIfExists: false)
+                } else {
+                    bai = file(baiPath)
+                    if (!bai.exists()) {
+                        bai = file("${bam.parent}/${bam.baseName}.bai")
+                        if (!bai.exists()) error "❌ BAM index not found for ${bam}"
+                    }
+                }
+                tuple(sample, bam, bai)
+            }
+
+        // QC outputs (same pattern as germline)
+        samtools_stats_raw = trigger
+            .flatMap { file("${outdir}/reports/samtools/*/*.md.cram.stats", checkIfExists: !isGCS) }
+            .map { f -> tuple(f.parent.name, f, 'samtools_stats') }
+
+        markdup_raw = trigger
+            .flatMap { file("${outdir}/reports/markduplicates/*/*.md.cram.metrics", checkIfExists: !isGCS) }
+            .map { f -> tuple(f.parent.name, f, 'markdup_metrics') }
+
+        alignment_qc_ch = samtools_stats_raw
+            .mix(markdup_raw)
+            .groupTuple(by: 0)
+            .map { sample, files, types ->
+                def idx = types.indexOf('samtools_stats')
+                idx >= 0 ? tuple(sample, files[idx], 'samtools_stats') : tuple(sample, files[0], 'markdup_metrics')
+            }
+
+        mosdepth_summary_ch = trigger
+            .flatMap { file("${outdir}/reports/mosdepth/*/*.md.mosdepth.summary.txt", checkIfExists: !isGCS) }
+            .map { summary -> tuple(summary.parent.name, summary) }
+
+        mosdepth_dist_ch = trigger
+            .flatMap { file("${outdir}/reports/mosdepth/*/*.md.mosdepth.global.dist.txt", checkIfExists: !isGCS) }
+            .map { dist -> tuple(dist.parent.name, dist) }
+
+    emit:
+        mutect2_vcf      = mutect2_vcf_ch
+        bam              = bam_ch
+        alignment_qc     = alignment_qc_ch
+        mosdepth_summary = mosdepth_summary_ch
+        mosdepth_dist    = mosdepth_dist_ch
+}
+
+workflow RUN_SOMATIC_VARIANT_CALLING {
+    main:
+        // Override Sarek tool selection for somatic mode before PIPELINE_INITIALISATION
+        params.tools      = "mutect2"
+        params.skip_tools = "baserecalibrator"
+        params.run_db_qc = false
+
+        log.info """
+        ╔════════════════════════════════════════════════════════════╗
+        ║  Running somatic variant calling pipeline                  ║
+        ║  Caller: Mutect2 (via Sarek)                               ║
+        ║  Tumor-only and tumor+normal pairs supported               ║
+        ╚════════════════════════════════════════════════════════════╝
+        """.stripIndent()
+
+        PIPELINE_INITIALISATION(
+            params.version,
+            params.validate_params,
+            args,
+            params.outdir,
+            params.input,
+            params.help,
+            params.help_full,
+            params.show_hidden,
+        )
+
+        def assayMap = [:]
+        PIPELINE_INITIALISATION.out.samplesheet
+            .map { row ->
+                def meta = row[0]
+                tuple(meta.sample.toString(), (meta.assay ?: 'NA').toString())
+            }
+            .toList()
+            .subscribe { pairs ->
+                assayMap = pairs.collectEntries { s, a -> [(s): a] }
+                log.info "✓ Loaded assay metadata for ${assayMap.size()} sample(s)"
+                assayMap.each { k, v -> log.info "  ${k} -> ${v}" }
+            }
+
+        NFCORE_SAREK(PIPELINE_INITIALISATION.out.samplesheet)
+
+        PIPELINE_COMPLETION(
+            params.email,
+            params.email_on_fail,
+            params.plaintext_email,
+            params.outdir,
+            params.monochrome_logs,
+            params.hook_url,
+            NFCORE_SAREK.out.multiqc_report
+        )
+
+        COLLECT_SOMATIC_OUTPUTS(
+            NFCORE_SAREK.out.multiqc_report,
+            params.outdir
+        )
+
+        if (params.run_db_qc) {
+            def vcf_with_meta_ch = COLLECT_SOMATIC_OUTPUTS.out.mutect2_vcf.map { id, vcf ->
+                def meta = [ sample: id, assay: assayMap.get(id, 'NA') ]
+                tuple(meta, vcf)
+            }
+            def bam_with_meta_ch = COLLECT_SOMATIC_OUTPUTS.out.bam.map { sample, bam, bai ->
+                def meta = [ sample: sample, assay: assayMap.get(sample, 'NA') ]
+                tuple(meta, bam, bai)
+            }
+            def alignment_qc_meta_ch = COLLECT_SOMATIC_OUTPUTS.out.alignment_qc.map { sample, f, type ->
+                tuple([ sample: sample, assay: assayMap.get(sample, 'NA') ], f, type)
+            }
+            def mosdepth_summary_meta_ch = COLLECT_SOMATIC_OUTPUTS.out.mosdepth_summary.map { sample, summary ->
+                tuple([ sample: sample, assay: assayMap.get(sample, 'NA') ], summary)
+            }
+            def mosdepth_dist_meta_ch = COLLECT_SOMATIC_OUTPUTS.out.mosdepth_dist.map { sample, dist ->
+                tuple([ sample: sample, assay: assayMap.get(sample, 'NA') ], dist)
+            }
+
+            DB_QC_EXPORT(
+                vcf_with_meta_ch,
+                alignment_qc_meta_ch,
+                mosdepth_summary_meta_ch,
+                mosdepth_dist_meta_ch
+            )
+
+            MANIFEST(
+                vcf_with_meta_ch,
+                bam_with_meta_ch,
+                DB_QC_EXPORT.out.qc_json
+            )
+        } else {
+            log.warn "params.run_db_qc=false → skipping QC export and manifest."
+        }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN WORKFLOW
 // ═══════════════════════════════════════════════════════════════════════════
 
 workflow {
-    
+
     // Validate and load BED file
     def bedFile = validateBedFile()
     bed_ch = Channel.value(bedFile)
-    RUN_FULL_VARIANT_CALLING(bed_ch)
+
+    if (params.somatic_mode) {
+        RUN_SOMATIC_VARIANT_CALLING()
+    } else {
+        RUN_FULL_VARIANT_CALLING(bed_ch)
+    }
     // Route to appropriate sub-workflow
     //if (params.variant_calling_outdir) {
     //    RUN_FROM_VARIANT_CALLING_OUTDIR(params.variant_calling_outdir, bed_ch)
