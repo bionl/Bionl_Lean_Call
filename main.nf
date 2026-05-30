@@ -359,9 +359,7 @@ workflow RUN_FULL_VARIANT_CALLING {
         bed_ch
 
     main:
-        // Set Sarek tool selection based on mode
         if (params.somatic_mode) {
-            params.tools = "mutect2"
             log.info """
         ╔════════════════════════════════════════════════════════════╗
         ║  Running somatic variant calling pipeline (Sarek/Mutect2)  ║
