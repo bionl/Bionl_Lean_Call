@@ -1,5 +1,11 @@
 nextflow.enable.dsl=2
 
+// Tool selection — resolved at script level where all params (config +
+// command-line) are already merged, so Sarek sees the correct value.
+if (params.somatic_mode) {
+    params.tools = "mutect2"
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // IMPORTS
 // ═══════════════════════════════════════════════════════════════════════════
