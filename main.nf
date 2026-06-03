@@ -2,8 +2,18 @@ nextflow.enable.dsl=2
 
 // Tool selection — resolved at script level where all params (config +
 // command-line) are already merged, so Sarek sees the correct value.
+nextflow.enable.dsl=2
+
+def toBool = { v ->
+    if (v instanceof Boolean) return v
+    return v?.toString()?.toLowerCase() in ['true', '1', 'yes', 'y']
+}
+
+params.somatic_mode = toBool(params.somatic_mode)
+
 if (params.somatic_mode) {
     params.tools = "mutect2"
+    params.create_consensus = false
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -39,7 +49,7 @@ params.bed                    = params.bed ?: "${workflow.projectDir}/data/annot
 //params.run_variant_calling    = params.run_variant_calling instanceof Boolean ? params.run_variant_calling : true
 params.create_consensus       = params.create_consensus instanceof Boolean ? params.create_consensus : true
 params.run_db_qc              = params.run_db_qc instanceof Boolean ? params.run_db_qc : true
-params.somatic_mode           = params.somatic_mode instanceof Boolean ? params.somatic_mode : false
+//params.somatic_mode           = params.somatic_mode instanceof Boolean ? params.somatic_mode : false
 // Run identifier propagated to the run-output manifest (consumed by the
 // downstream DB ingestion pipeline). Falls back to workflow.runName at
 // manifest-build time if left null.
