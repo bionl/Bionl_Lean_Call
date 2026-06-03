@@ -2,19 +2,7 @@ nextflow.enable.dsl=2
 
 // Tool selection — resolved at script level where all params (config +
 // command-line) are already merged, so Sarek sees the correct value.
-nextflow.enable.dsl=2
 
-def toBool = { v ->
-    if (v instanceof Boolean) return v
-    return v?.toString()?.toLowerCase() in ['true', '1', 'yes', 'y']
-}
-
-params.somatic_mode = toBool(params.somatic_mode)
-
-if (params.somatic_mode) {
-    params.tools = "mutect2"
-    params.create_consensus = false
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // IMPORTS
